@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  auth-service:
+    build: ./AuthService
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - MONGO_URI=mongodb://mongodb:27017/auth-service
+      - JWT_SECRET=your_jwt_secret_key_here
+    depends_on:
+      - mongodb
+
+  product-service:
+    build: ./ProductService
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGO_URI=mongodb://mongodb:27017/product-service
+      - JWT_SECRET=your_jwt_secret_key_here
+    depends_on:
+      - mongodb
+      - auth-service
+
+  order-service:
+    build: ./OrderService
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - MONGO_URI=mongodb://mongodb:27017/order-service
+      - JWT_SECRET=your_jwt_secret_key_here
+    depends_on:
+      - mongodb
+      - auth-service
+      - product-service
+
+  frontend:
+    build: ./Frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - VUE_APP_AUTH_SERVICE_URL=http://localhost:3000
+      - VUE_APP_PRODUCT_SERVICE_URL=http://localhost:3001
+      - VUE_APP_ORDER_SERVICE_URL=http://localhost:3002
+    depends_on:
+      - auth-service
+      - product-service
+      - order-service
+
+volumes:
+  mongodb_data: 
