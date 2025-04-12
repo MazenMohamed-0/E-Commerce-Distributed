@@ -14,6 +14,10 @@
 - [Getting Started](#-getting-started)
 - [Development](#-development)
 
+# 🛒 Distributed E-Commerce Microservices System
+
+A scalable and modular e-commerce application built using Node.js, Vue.js, MongoDB, Docker, and Kubernetes. The system follows a microservices architecture and supports authentication, product management, order processing, and a Vue-based frontend.
+
 ## 📁 Project Structure
 
 ```bash
