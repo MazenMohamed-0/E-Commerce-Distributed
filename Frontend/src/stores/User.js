@@ -29,6 +29,23 @@ export const useUserStore = defineStore('user', {
         throw new Error('Invalid credentials');
       }
     },
+    async signup({ name, email, password }) {
+      try {
+        const response = await api.auth.signup({ name, email, password });
+        console.log(response);
+        // Save the user object and token from the response
+        this.user = {
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          role: response.data.user.role,
+        };
+        this.token = response.data.token;
+        localStorage.setItem('token', response.data.token); // Persist token
+      } catch (error) {
+        throw new Error('Signup failed');
+      }
+    },
     logout() {
       this.user = {
         id: null,

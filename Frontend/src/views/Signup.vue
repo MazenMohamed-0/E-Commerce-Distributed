@@ -4,16 +4,16 @@
       <v-col cols="12" sm="8" md="4">
         <v-card class="elevation-12">
           <v-toolbar color="primary" dark flat>
-            <v-toolbar-title>Login</v-toolbar-title>
+            <v-toolbar-title>Sign Up</v-toolbar-title>
           </v-toolbar>
           <v-card-text>
-            <login-form @login="handleLogin" />
+            <signup-form @signup="handleSignup" />
           </v-card-text>
           <v-card-actions class="px-4 pb-4">
             <v-spacer></v-spacer>
             <span class="text-body-2">
-              Don't have an account?
-              <router-link to="/Signup" class="text-primary">Sign up</router-link>
+              Already have an account?
+              <router-link to="/login" class="text-primary">Login</router-link>
             </span>
           </v-card-actions>
         </v-card>
@@ -24,24 +24,24 @@
 
 <script>
 import { useUserStore } from '@/stores/user';
-import LoginForm from '@/components/LoginForm.vue';
+import SignupForm from '@/components/SignupForm.vue';
 
 export default {
-  name: 'LoginView',
+  name: 'SignupView',
   components: {
-    LoginForm,
+    SignupForm,
   },
   setup() {
     const userStore = useUserStore();
     return { userStore };
   },
   methods: {
-    async handleLogin(credentials) {
+    async handleSignup(userData) {
       try {
-        await this.userStore.login(credentials);
+        await this.userStore.signup(userData);
         this.$router.push('/'); // Redirect to homepage on success
       } catch (error) {
-        console.error('Login failed:', error);
+        console.error('Signup failed:', error);
       }
     },
   },

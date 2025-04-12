@@ -1,52 +1,62 @@
 <template>
-  <v-form @submit.prevent="submit" ref="form">
+  <v-form ref="form" v-model="valid" lazy-validation>
     <v-text-field
-      v-model="email"
-      label="Email"
-      type="email"
-      :rules="[rules.required, rules.email]"
-      prepend-inner-icon="mdi-email"
+      v-model="userData.name"
+      label="Full Name"
+      :rules="[rules.required]"
+      required
+      prepend-icon="mdi-account"
       variant="outlined"
       class="mb-4"
     ></v-text-field>
     <v-text-field
-      v-model="password"
+      v-model="userData.email"
+      label="Email"
+      :rules="[rules.required, rules.email]"
+      required
+      prepend-icon="mdi-email"
+      variant="outlined"
+      class="mb-4"
+    ></v-text-field>
+    <v-text-field
+      v-model="userData.password"
       label="Password"
       :type="showPassword ? 'text' : 'password'"
       :rules="[rules.required, rules.min]"
-      prepend-inner-icon="mdi-lock"
+      required
+      prepend-icon="mdi-lock"
       :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
       @click:append-inner="togglePasswordVisibility"
       variant="outlined"
       class="mb-4"
     ></v-text-field>
     <v-btn
+      :disabled="!valid"
       color="primary"
-      type="submit"
       block
-      :loading="loading"
+      @click="submit"
     >
-      Login
+      Sign Up
     </v-btn>
   </v-form>
 </template>
 
 <script>
 export default {
-  name: 'LoginForm',
+  name: 'SignupForm',
   data() {
     return {
-      email: '',
-      password: '',
+      valid: false,
       showPassword: false,
-      loading: false,
+      userData: {
+        name: '',
+        email: '',
+        password: '',
+      },
       rules: {
         required: (value) => !!value || 'Required.',
-        email: (value) => {
-          const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          return pattern.test(value) || 'Invalid email.';
-        },
-        min: (value) => value.length >= 6 || 'Min 6 characters.',
+        email: (value) => /.+@.+\..+/.test(value) || 'E-mail must be valid.',
+        min: (value) => (value && value.length >= 6) || 'Min 6 characters.',
       },
     };
   },
@@ -55,15 +65,7 @@ export default {
       this.showPassword = !this.showPassword;
     },
     submit() {
-      if (this.$refs.form.validate()) {
-        this.loading = true;
-        const credentials = {
-          email: this.email,
-          password: this.password,
-        };
-        this.$emit('login', credentials);
-        this.loading = false;
-      }
+      this.$emit('signup', this.userData);
     },
   },
 };
