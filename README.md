@@ -70,43 +70,28 @@ E-Commerce-Distributed/
     ├── .gitignore
     ├── Dockerfile
     ├── package.json
-    ├── .env
+    ├── package-lock.json
+    ├── vite.config.js
+    ├── index.html
     ├── public/
-    │   ├── index.html
     │   └── favicon.ico
     ├── src/
-    │   ├── main.js
-    │   ├── App.vue
+    │   ├── main.js              # Application entry point
+    │   ├── App.vue              # Root Vue component
+    │   ├── api/
+    │   │   └── Endpoints.js     # API endpoint configurations
+    │   ├── assets/              # Static assets (images, fonts, etc.)
+    │   ├── components/          # Reusable Vue components
+    │   │   └── LoginForm.vue    # Login form component
+    │   ├── plugins/             # Vue plugins
     │   ├── router/
-    │   │   └── index.js
-    │   ├── store/
-    │   │   └── index.js
-    │   ├── components/
-    │   │   ├── auth/
-    │   │   │   ├── Login.vue
-    │   │   │   └── Register.vue
-    │   │   ├── products/
-    │   │   │   ├── ProductList.vue
-    │   │   │   └── ProductDetail.vue
-    │   │   └── orders/
-    │   │       ├── OrderList.vue
-    │   │       └── OrderDetail.vue
-    │   ├── views/
-    │   │   ├── Home.vue
-    │   │   ├── Products.vue
-    │   │   ├── Cart.vue
-    │   │   └── Profile.vue
-    │   ├── services/
-    │   │   ├── authService.js
-    │   │   ├── productService.js
-    │   │   └── orderService.js
-    │   └── assets/
-    │       ├── styles/
-    │       │   └── main.css
-    │       └── images/
-    └── tests/
-        ├── unit/
-        └── e2e/
+    │   │   └── index.js         # Vue Router configuration
+    │   ├── stores/              # Pinia state management
+    │   │   └── User.js          # User state management
+    │   ├── styles/              # Global styles
+    │   └── views/               # Page components
+    │       └── Login.vue        # Login page view
+    └── .vscode/                 # VS Code configuration
 ```
 
 ## 🏗️ Architecture Overview
