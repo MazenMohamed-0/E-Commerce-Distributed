@@ -4,9 +4,17 @@ const API_URL = 'http://localhost:3001/auth';
 
 export const authService = {
   // Regular login
-  async login(email, password) {
-    const response = await axios.post(`${API_URL}/login`, { email, password });
-    return response.data;
+  async login(credentials) {
+    try {
+      const response = await axios.post(`${API_URL}/login`, {
+        email: credentials.email,
+        password: credentials.password
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Login API error:', error);
+      throw error;
+    }
   },
 
   // Regular registration

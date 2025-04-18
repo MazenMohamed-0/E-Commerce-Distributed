@@ -76,6 +76,19 @@ export default {
   },
   methods: {
     async handleLogin() {
+      // Validate required fields
+      if (!this.email || !this.password) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(this.email)) {
+        alert('Please enter a valid email address');
+        return;
+      }
+
       try {
         const response = await authService.login({
           email: this.email,
@@ -86,7 +99,10 @@ export default {
         this.$router.push('/');
       } catch (error) {
         console.error('Login error:', error);
-        alert(error.message || 'Login failed');
+        // Show more specific error message from the backend
+        const errorMessage = error.response?.data?.message || 
+                           (error.response?.status === 401 ? 'Invalid email or password' : 'Login failed');
+        alert(errorMessage);
       }
     },
     handleSocialLoginSuccess(token) {

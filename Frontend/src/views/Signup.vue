@@ -112,14 +112,34 @@ export default {
   },
   methods: {
     async handleSignup() {
+      // Validate required fields
+      if (!this.name || !this.email || !this.password || !this.confirmPassword) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      // Validate password length
+      if (this.password.length < 6) {
+        alert('Password must be at least 6 characters long');
+        return;
+      }
+
+      // Validate password match
       if (this.password !== this.confirmPassword) {
         alert('Passwords do not match');
         return;
       }
 
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(this.email)) {
+        alert('Please enter a valid email address');
+        return;
+      }
+
       try {
         const response = await authService.register({
-          fullName: this.name,
+          name: this.name,
           email: this.email,
           password: this.password,
           role: this.role
@@ -129,7 +149,9 @@ export default {
         this.$router.push('/');
       } catch (error) {
         console.error('Signup error:', error);
-        alert(error.message || 'Signup failed');
+        // Show more specific error message from the backend
+        const errorMessage = error.response?.data?.message || error.message || 'Signup failed';
+        alert(errorMessage);
       }
     },
     handleSocialLoginSuccess(token) {
