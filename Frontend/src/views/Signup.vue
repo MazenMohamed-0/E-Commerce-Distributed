@@ -4,10 +4,19 @@
       <v-col cols="12" sm="8" md="4">
         <v-card class="elevation-12">
           <v-toolbar color="primary" dark flat>
-            <v-toolbar-title>Login</v-toolbar-title>
+            <v-toolbar-title>Create Account</v-toolbar-title>
           </v-toolbar>
           <v-card-text>
-            <v-form @submit.prevent="handleLogin">
+            <v-form @submit.prevent="handleSignup">
+              <v-text-field
+                v-model="name"
+                label="Full Name"
+                name="name"
+                prepend-icon="mdi-account"
+                type="text"
+                required
+              ></v-text-field>
+
               <v-text-field
                 v-model="email"
                 label="Email"
@@ -28,13 +37,32 @@
                 required
               ></v-text-field>
 
+              <v-text-field
+                v-model="confirmPassword"
+                label="Confirm Password"
+                name="confirmPassword"
+                prepend-icon="mdi-lock-check"
+                :type="showConfirmPassword ? 'text' : 'password'"
+                :append-icon="showConfirmPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                @click:append="showConfirmPassword = !showConfirmPassword"
+                required
+              ></v-text-field>
+
+              <v-select
+                v-model="role"
+                :items="roles"
+                label="Account Type"
+                prepend-icon="mdi-account-tie"
+                required
+              ></v-select>
+
               <v-btn
                 color="primary"
                 type="submit"
                 block
                 class="mt-4"
               >
-                Login
+                Create Account
               </v-btn>
             </v-form>
 
@@ -48,8 +76,8 @@
           <v-card-actions class="px-4 pb-4">
             <v-spacer></v-spacer>
             <span class="text-body-2">
-              Don't have an account?
-              <router-link to="/signup" class="text-primary">Sign up</router-link>
+              Already have an account?
+              <router-link to="/login" class="text-primary">Login</router-link>
             </span>
           </v-card-actions>
         </v-card>
@@ -63,30 +91,45 @@ import { authService } from '@/api/authService';
 import SocialLogin from '@/components/SocialLogin.vue';
 
 export default {
-  name: 'Login',
+  name: 'Signup',
   components: {
     SocialLogin
   },
   data() {
     return {
+      name: '',
       email: '',
       password: '',
-      showPassword: false
+      confirmPassword: '',
+      role: 'buyer',
+      showPassword: false,
+      showConfirmPassword: false,
+      roles: [
+        { title: 'Buyer', value: 'buyer' },
+        { title: 'Seller', value: 'seller' }
+      ]
     };
   },
   methods: {
-    async handleLogin() {
+    async handleSignup() {
+      if (this.password !== this.confirmPassword) {
+        alert('Passwords do not match');
+        return;
+      }
+
       try {
-        const response = await authService.login({
+        const response = await authService.register({
+          fullName: this.name,
           email: this.email,
-          password: this.password
+          password: this.password,
+          role: this.role
         });
-        console.log('Login response:', response);
+        console.log('Signup response:', response);
         authService.setToken(response.token);
         this.$router.push('/');
       } catch (error) {
-        console.error('Login error:', error);
-        alert(error.message || 'Login failed');
+        console.error('Signup error:', error);
+        alert(error.message || 'Signup failed');
       }
     },
     handleSocialLoginSuccess(token) {
@@ -101,7 +144,7 @@ export default {
 </script>
 
 <style scoped>
-.login-container {
+.signup-container {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -109,7 +152,7 @@ export default {
   background-color: #f5f5f5;
 }
 
-.login-card {
+.signup-card {
   background: white;
   padding: 2rem;
   border-radius: 8px;
@@ -124,7 +167,7 @@ h2 {
   color: #333;
 }
 
-.login-form {
+.signup-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -141,19 +184,19 @@ label {
   color: #666;
 }
 
-input {
+input, select {
   padding: 0.75rem;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
 }
 
-input:focus {
+input:focus, select:focus {
   outline: none;
   border-color: #4a90e2;
 }
 
-.login-button {
+.signup-button {
   background-color: #4a90e2;
   color: white;
   padding: 0.75rem;
@@ -162,24 +205,25 @@ input:focus {
   font-size: 1rem;
   cursor: pointer;
   transition: background-color 0.3s ease;
+  margin-top: 1rem;
 }
 
-.login-button:hover {
+.signup-button:hover {
   background-color: #357abd;
 }
 
-.register-link {
+.login-link {
   text-align: center;
   margin-top: 1rem;
   color: #666;
 }
 
-.register-link a {
+.login-link a {
   color: #4a90e2;
   text-decoration: none;
 }
 
-.register-link a:hover {
+.login-link a:hover {
   text-decoration: underline;
 }
 </style>

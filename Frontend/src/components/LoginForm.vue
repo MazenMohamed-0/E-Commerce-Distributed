@@ -17,6 +17,7 @@
         prepend-inner-icon="mdi-lock"
         :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
         @click:append-inner="showPassword = !showPassword"
+        @blur="showPassword = false"
         variant="outlined"
         class="mb-4"
       ></v-text-field>
