@@ -49,7 +49,7 @@
             <v-spacer></v-spacer>
             <span class="text-body-2">
               Don't have an account?
-              <router-link to="/signup" class="text-primary">Sign up</router-link>
+              <router-link to="/Signup" class="text-primary">Sign up</router-link>
             </span>
           </v-card-actions>
         </v-card>
