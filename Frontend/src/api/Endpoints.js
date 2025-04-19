@@ -11,6 +11,9 @@ export default {
   auth: {
     login(credentials) {
       return apiClient.post('/auth/login', credentials);
+    },
+    signup(userData) {
+      return apiClient.post('/auth/signup', userData);
     }
   },
 };

@@ -32,8 +32,7 @@ export const useUserStore = defineStore('user', {
     async signup({ name, email, password }) {
       try {
         const response = await api.auth.signup({ name, email, password });
-        console.log(response);
-        // Save the user object and token from the response
+        // After successful signup, automatically log the user in
         this.user = {
           id: response.data.user.id,
           name: response.data.user.name,
@@ -41,7 +40,7 @@ export const useUserStore = defineStore('user', {
           role: response.data.user.role,
         };
         this.token = response.data.token;
-        localStorage.setItem('token', response.data.token); // Persist token
+        localStorage.setItem('token', response.data.token);
       } catch (error) {
         throw new Error('Signup failed');
       }

@@ -16,13 +16,21 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
     minlength: 6
   },
   role: {
     type: String,
-    enum: ['user', 'admin'],
-    default: 'user'
+    enum: ['admin', 'buyer', 'seller'],
+    default: 'buyer'
+  },
+  oauthProvider: {
+    type: String,
+    enum: ['google', 'facebook', null],
+    default: null
+  },
+  oauthId: {
+    type: String,
+    sparse: true
   },
   createdAt: {
     type: Date,
@@ -30,8 +38,9 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+// Only hash password if it's modified and not empty (for OAuth users)
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   
   try {
     const salt = await bcrypt.genSalt(10);
@@ -43,6 +52,7 @@ userSchema.pre('save', async function (next) {
 });
 
 userSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
 
