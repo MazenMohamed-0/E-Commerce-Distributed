@@ -61,6 +61,8 @@
 <script>
 import { authService } from '@/api/authService';
 import SocialLogin from '@/components/SocialLogin.vue';
+import NavBar from '@/components/NavBar.vue'
+
 
 export default {
   name: 'Login',
@@ -117,85 +119,103 @@ export default {
 </script>
 
 <style scoped>
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background-color: #f5f5f5;
+.bg-dark {
+  background-color: rgb(17, 24, 39) !important;
 }
 
+.text-medium-emphasis {
+  color: rgba(235, 235, 235, 0.6);
+}
+
+.v-btn {
+  text-transform: none;
+}
+
+/* Card animation */
 .login-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 400px;
+  animation: fadeInUp 0.6s ease-out;
 }
 
-h2 {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  color: #333;
+/* Input field animations */
+.input-field {
+  transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.input-field:focus-within {
+  transform: translateY(-2px);
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+/* Feature icon animation */
+.feature-icon {
+  transition: transform 0.3s ease;
 }
 
-label {
-  font-weight: 500;
-  color: #666;
+.feature:hover .feature-icon {
+  transform: scale(1.1);
 }
 
-input {
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
+/* Button animations */
+.submit-btn {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-input:focus {
-  outline: none;
-  border-color: #4a90e2;
+.submit-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.login-button {
-  background-color: #4a90e2;
-  color: white;
-  padding: 0.75rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
+.link-btn {
+  transition: opacity 0.3s ease;
 }
 
-.login-button:hover {
-  background-color: #357abd;
+.link-btn:hover {
+  opacity: 0.8;
 }
 
-.register-link {
-  text-align: center;
-  margin-top: 1rem;
-  color: #666;
+.social-btn {
+  transition: all 0.3s ease;
 }
 
-.register-link a {
-  color: #4a90e2;
-  text-decoration: none;
+.social-btn:hover {
+  transform: translateY(-2px);
+  opacity: 0.9;
 }
 
-.register-link a:hover {
-  text-decoration: underline;
+/* Checkbox animation */
+.checkbox-field {
+  transition: opacity 0.3s ease;
+}
+
+.checkbox-field:hover {
+  opacity: 0.9;
+}
+
+/* Feature stagger animation */
+.feature {
+  opacity: 0;
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* Keyframe animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
