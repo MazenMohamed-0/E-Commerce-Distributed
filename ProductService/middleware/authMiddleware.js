@@ -17,11 +17,17 @@ const verifyToken = (req, res, next) => {
 };
 
 // Middleware to check if user is admin
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Access denied. Admin only.' });
+const isAuthorized = (req, res, next) => {
+    console.log("role", req.user.role);
+    if(req.user.role === 'seller') {
+        console.log("seller role");
     }
-    next();
+    if (req.user.role === 'admin' || req.user.role === 'seller') {
+        return next();
+    }
+    else{
+        return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action' });
+    }
 };
 
-module.exports = { verifyToken, isAdmin }; 
+module.exports = { verifyToken, isAuthorized }; 
