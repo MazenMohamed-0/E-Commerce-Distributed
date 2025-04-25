@@ -5,7 +5,7 @@ class CartService {
     async getCart(userId) {
         try {
             let cart = await Cart.findOne({ userId });
-            
+            console.log('getting cart for frontend :', cart);
             if (!cart) {
                 // Create a new cart if one doesn't exist
                 cart = new Cart({
@@ -24,21 +24,31 @@ class CartService {
 
     async addToCart(userId, item, token) {
         try {
+            console.log('Adding item to cart:', item);
+            console.log('User ID:', userId);
+            console.log('Token for cart service:', token);
+
+
             // Verify product exists and get details from Product Service
-            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3001';
+            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
             const productResponse = await axios.get(`${productServiceUrl}/products/${item.productId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             });
             const product = productResponse.data;
-            
+            console.log('Product data:', product);
+
             if (!product) {
                 throw new Error('Product not found');
             }
+
+            if (!product.createdBy) {
+                throw new Error('Product seller information not found');
+            }
             
             let cart = await Cart.findOne({ userId });
-            
+            console.log('Cart:', cart);
             if (!cart) {
                 // Create a new cart if one doesn't exist
                 cart = new Cart({
@@ -68,13 +78,20 @@ class CartService {
                 // Update existing item quantity
                 cart.items[existingItemIndex].quantity += item.quantity;
             } else {
-                // Add new item to cart
+                // Add new item to cart with seller information
                 cart.items.push({
                     productId: item.productId,
                     quantity: item.quantity,
                     price: product.price,
                     name: product.name,
-                    imageUrl: product.imageUrl
+                    imageUrl: product.imageUrl,
+                    stock: product.stock,
+                    seller: {
+                        _id: product.createdBy._id,
+                        name: product.createdBy.name,
+                        storeName: product.createdBy.storeName,
+                        role: product.createdBy.role
+                    }
                 });
             }
             
@@ -112,7 +129,7 @@ class CartService {
                 cart.items.splice(itemIndex, 1);
             } else {
                 // Always check product stock regardless of whether increasing or decreasing
-                const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3001';
+                const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
                 const productResponse = await axios.get(`${productServiceUrl}/products/${productId}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -120,16 +137,21 @@ class CartService {
                 });
                 const product = productResponse.data;
                 
-                // Get the current quantity in the cart
-                const currentQuantity = cart.items[itemIndex].quantity;
-                
                 // Check if requested quantity exceeds available stock
                 if (product.stock < quantity) {
                     throw new Error(`Not enough stock available. Only ${product.stock} items in stock, but ${quantity} requested.`);
                 }
                 
-                // Update quantity
+                // Update quantity and ensure seller info is present
                 cart.items[itemIndex].quantity = quantity;
+                if (product.createdBy && !cart.items[itemIndex].seller) {
+                    cart.items[itemIndex].seller = {
+                        _id: product.createdBy._id,
+                        name: product.createdBy.name,
+                        storeName: product.createdBy.storeName,
+                        role: product.createdBy.role
+                    };
+                }
             }
             
             // Recalculate total amount

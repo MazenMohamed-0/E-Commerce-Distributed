@@ -1,37 +1,18 @@
 const Product = require('../models/Product');
 const axios = require('axios');
 
-// Mock user service for when Auth Service is unavailable
-const mockUserService = {
-    getUserById: (userId) => {
-        return {
-            _id: userId,
-            name: 'Store ' + userId.toString().substr(-4),
-            email: `store${userId.toString().substr(-4)}@example.com`,
-            storeName: 'Store ' + userId.toString().substr(-4),
-            role: 'seller'
-        };
-    },
-    
-    getUsersByIds: (userIds) => {
-        return userIds.map(userId => ({
-            _id: userId,
-            name: 'Store ' + userId.toString().substr(-4),
-            email: `store${userId.toString().substr(-4)}@example.com`,
-            storeName: 'Store ' + userId.toString().substr(-4),
-            role: 'seller'
-        }));
-    }
-};
+
 
 class ProductService {
     async getAllProducts() {
         try {
             // Get all products
             const products = await Product.find();
+            console.log('Found products:', products.map(p => ({ id: p._id, createdBy: p.createdBy })));
             
             // Get unique user IDs from products (filtering out undefined values)
             const userIds = [...new Set(products.map(product => product.createdBy).filter(id => id))];
+            console.log('Unique user IDs to fetch:', userIds);
             
             // If there are no valid user IDs, just return the products as is
             if (userIds.length === 0) {
@@ -40,52 +21,67 @@ class ProductService {
             }
             
             // Fetch user information from Auth Service
-            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
+            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
             let usersMap = {};
             
             try {
-                // Call to the Auth Service to get user information using the batch endpoint
-                const response = await axios.get(`${authServiceUrl}/auth/users/batch?ids=${userIds.join(',')}`, {
-                    timeout: 3000 // 3 second timeout to fail fast if Auth Service is unavailable
+                console.log('Attempting to fetch seller store data from:', `${authServiceUrl}/users/sellers/batch?ids=${userIds.join(',')}`);
+                // Call to the Auth Service to get seller store information
+                const response = await axios.get(`${authServiceUrl}/users/sellers/batch?ids=${userIds.join(',')}`, {
+                    timeout: 5000 // 5 second timeout
                 });
                 
-                // Create a map of user IDs to user objects
-                usersMap = response.data.reduce((map, user) => {
-                    map[user._id] = user;
+                console.log('Raw Auth Service response:', response.data);
+                
+                if (response.data && Array.isArray(response.data)) {
+                    // Create a map of user IDs to store information
+                    usersMap = response.data.reduce((map, seller) => {
+                        console.log('Processing seller:', seller);
+                        map[seller._id] = {
+                            _id: seller._id,
+                            name: seller.name,
+                            storeName: seller.storeName || 'Unknown Store',
+                            role: 'seller'
+                        };
                     return map;
                 }, {});
                 
-                console.log('Successfully fetched user data from Auth Service');
+                    console.log('Final users map:', usersMap);
+                } else {
+                    console.error('Invalid response format from Auth Service:', response.data);
+                }
             } catch (authError) {
-                console.error('Error fetching user information:', authError.message);
-                console.log('Using mock user service as fallback');
-                
-                // Use the mock user service as fallback
-                const mockUsers = mockUserService.getUsersByIds(userIds);
-                mockUsers.forEach(user => {
-                    usersMap[user._id] = user;
-                });
+                console.error('Error fetching seller store information:', authError.message);
+                if (authError.response) {
+                    console.error('Auth Service response status:', authError.response.status);
+                    console.error('Auth Service response data:', authError.response.data);
+                }
             }
             
             // Merge product and user information
-            return products.map(product => {
+            const finalProducts = products.map(product => {
                 const productObj = product.toObject();
+                console.log('Processing product:', productObj._id, 'createdBy:', productObj.createdBy);
+                
                 if (productObj.createdBy && usersMap[productObj.createdBy]) {
+                    console.log('Found store info for product:', productObj._id, 'store:', usersMap[productObj.createdBy]);
+                    productObj.createdBy = usersMap[productObj.createdBy];
+                } else {
+                    console.log('No store info found for product:', productObj._id, 'using default values');
                     productObj.createdBy = {
-                        _id: productObj.createdBy,
-                        ...usersMap[productObj.createdBy]
-                    };
-                } else if (!productObj.createdBy) {
-                    // Add a placeholder for products without createdBy
-                    productObj.createdBy = {
-                        _id: null,
+                        _id: productObj.createdBy || null,
                         name: 'Unknown',
-                        storeName: 'Unknown Store'
+                        storeName: 'Unknown Store',
+                        role: 'unknown'
                     };
                 }
                 return productObj;
             });
+
+            console.log('Final products with store info:', finalProducts);
+            return finalProducts;
         } catch (error) {
+            console.error('Error in getAllProducts:', error);
             throw new Error('Error fetching products: ' + error.message);
         }
     }
@@ -98,43 +94,67 @@ class ProductService {
                 throw new Error('Product not found');
             }
             
+            console.log('Found product:', { id: product._id, createdBy: product.createdBy });
+            
             // Fetch user information from Auth Service if createdBy exists
-            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
+            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
             const productObj = product.toObject();
             
             if (productObj.createdBy) {
                 try {
-                    // Call to the Auth Service to get user information
-                    const response = await axios.get(`${authServiceUrl}/auth/users/${productObj.createdBy}`, {
-                        timeout: 3000 // 3 second timeout to fail fast if Auth Service is unavailable
+                    console.log('Attempting to fetch seller store data from:', `${authServiceUrl}/users/seller/${productObj.createdBy}/store`);
+                    // Call to the Auth Service to get seller store information
+                    const response = await axios.get(`${authServiceUrl}/users/seller/${productObj.createdBy}/store`, {
+                        timeout: 5000 // 5 second timeout
                     });
                     
+                    console.log('Raw Auth Service response:', response.data);
+                    
+                    if (response.data) {
                     // Merge product and user information
+                        productObj.createdBy = {
+                            _id: productObj.createdBy,
+                            name: response.data.name,
+                            storeName: response.data.storeName,
+                            role: 'seller'
+                        };
+                        
+                        console.log('Updated product with store info:', productObj);
+                    } else {
+                        console.error('Invalid response format from Auth Service');
+                        productObj.createdBy = {
+                            _id: productObj.createdBy,
+                            name: 'Unknown',
+                            storeName: 'Unknown Store',
+                            role: 'unknown'
+                        };
+                    }
+                } catch (authError) {
+                    console.error('Error fetching seller store information:', authError.message);
+                    if (authError.response) {
+                        console.error('Auth Service response status:', authError.response.status);
+                        console.error('Auth Service response data:', authError.response.data);
+                    }
                     productObj.createdBy = {
                         _id: productObj.createdBy,
-                        ...response.data
+                        name: 'Unknown',
+                        storeName: 'Unknown Store',
+                        role: 'unknown'
                     };
-                    
-                    console.log('Successfully fetched user data from Auth Service');
-                } catch (authError) {
-                    console.error('Error fetching user information:', authError.message);
-                    console.log('Using mock user service as fallback');
-                    
-                    // Use the mock user service as fallback
-                    const mockUser = mockUserService.getUserById(productObj.createdBy);
-                    productObj.createdBy = mockUser;
                 }
             } else {
                 // Add a placeholder for products without createdBy
                 productObj.createdBy = {
                     _id: null,
                     name: 'Unknown',
-                    storeName: 'Unknown Store'
+                    storeName: 'Unknown Store',
+                    role: 'unknown'
                 };
             }
             
             return productObj;
         } catch (error) {
+            console.error('Error in getProductById:', error);
             throw new Error('Error fetching product: ' + error.message);
         }
     }

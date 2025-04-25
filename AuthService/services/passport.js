@@ -22,84 +22,80 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Google OAuth Strategy - Only initialize if credentials are available
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: 'http://localhost:3001/auth/google/callback'
-  }, async (accessToken, refreshToken, profile, done) => {
-    try {
-      let user = await User.findOne({ oauthId: profile.id, oauthProvider: 'google' });
+// Google OAuth Strategy
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: 'http://localhost:3001/auth/google/callback',
+  scope: ['profile', 'email'],
+  state: true
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ oauthId: profile.id, oauthProvider: 'google' });
 
-      if (!user) {
-        user = await User.findOne({ email: profile.emails[0].value });
+    if (!user) {
+      user = await User.findOne({ email: profile.emails[0].value });
 
-        if (user) {
-          // Link existing account with OAuth
-          user.oauthId = profile.id;
-          user.oauthProvider = 'google';
-          await user.save();
-        } else {
-          // Create new user
-          user = await User.create({
-            name: profile.displayName,
-            email: profile.emails[0].value,
-            oauthId: profile.id,
-            oauthProvider: 'google',
-            role: 'buyer'
-          });
-        }
+      if (user) {
+        // Link existing account with OAuth
+        user.oauthId = profile.id;
+        user.oauthProvider = 'google';
+        await user.save();
+      } else {
+        // Create new user without role
+        user = await User.create({
+          name: profile.displayName,
+          email: profile.emails[0].value,
+          oauthId: profile.id,
+          oauthProvider: 'google',
+          role: null // No role set yet
+        });
       }
-
-      return done(null, user);
-    } catch (error) {
-      return done(error, null);
     }
-  }));
-}
 
-// Facebook OAuth Strategy - Only initialize if credentials are available
-if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
-  passport.use(new FacebookStrategy({
-    clientID: process.env.FACEBOOK_APP_ID,
-    clientSecret: process.env.FACEBOOK_APP_SECRET,
-    callbackURL: 'http://localhost:3001/auth/facebook/callback',
-    profileFields: ['id', 'emails', 'name', 'displayName'],
-    enableProof: true,
-    state: true,
-    scope: ['email', 'public_profile'],
-    authType: 'reauthenticate',
-    display: 'popup'
-  }, async (accessToken, refreshToken, profile, done) => {
-    try {
-      let user = await User.findOne({ oauthId: profile.id, oauthProvider: 'facebook' });
+    return done(null, user);
+  } catch (error) {
+    return done(error, null);
+  }
+}));
 
-      if (!user) {
-        user = await User.findOne({ email: profile.emails[0].value });
+// Facebook OAuth Strategy
+passport.use(new FacebookStrategy({
+  clientID: process.env.FACEBOOK_APP_ID,
+  clientSecret: process.env.FACEBOOK_APP_SECRET,
+  callbackURL: 'http://localhost:3001/auth/facebook/callback',
+  profileFields: ['id', 'emails', 'name', 'displayName'],
+  enableProof: true,
+  state: true,
+  scope: ['email', 'public_profile']
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ oauthId: profile.id, oauthProvider: 'facebook' });
 
-        if (user) {
-          // Link existing account with OAuth
-          user.oauthId = profile.id;
-          user.oauthProvider = 'facebook';
-          await user.save();
-        } else {
-          // Create new user
-          user = await User.create({
-            name: profile.displayName,
-            email: profile.emails[0].value,
-            oauthId: profile.id,
-            oauthProvider: 'facebook',
-            role: 'buyer'
-          });
-        }
+    if (!user) {
+      user = await User.findOne({ email: profile.emails[0].value });
+
+      if (user) {
+        // Link existing account with OAuth
+        user.oauthId = profile.id;
+        user.oauthProvider = 'facebook';
+        await user.save();
+      } else {
+        // Create new user without role
+        user = await User.create({
+          name: profile.displayName,
+          email: profile.emails[0].value,
+          oauthId: profile.id,
+          oauthProvider: 'facebook',
+          role: null // No role set yet
+        });
       }
-
-      return done(null, user);
-    } catch (error) {
-      return done(error, null);
     }
-  }));
-}
 
-module.exports = passport;
+    return done(null, user);
+  } catch (error) {
+    return done(error, null);
+  }
+}));
+
+module.exports = passport; 

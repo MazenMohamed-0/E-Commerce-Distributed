@@ -3,7 +3,6 @@ const router = express.Router();
 const productService = require('../services/productService');
 const { verifyToken, isAuthorized } = require('../middleware/authMiddleware');
 
-router.use(verifyToken); // Apply token verification middleware to all routes
 // Public routes (no authentication required)
 router.get('/', async (req, res) => {
     try {
@@ -23,8 +22,8 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Protected routes (require authentication and admin role)
-
+// Protected routes (require authentication)
+router.use(verifyToken);
 
 // Create product (admin or seller only)
 router.post('/', isAuthorized, async (req, res) => {

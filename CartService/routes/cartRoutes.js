@@ -17,7 +17,7 @@ router.get('/', isBuyer, async (req, res) => {
 });
 
 // Add item to cart
-router.post('/items', isBuyer, async (req, res) => {
+router.post('/', isBuyer, async (req, res) => {
     try {
         const { productId, quantity } = req.body;
         
@@ -35,10 +35,12 @@ router.post('/items', isBuyer, async (req, res) => {
 });
 
 // Update cart item quantity
-router.put('/items/:productId', isBuyer, async (req, res) => {
+router.put('/:productId', isBuyer, async (req, res) => {
     try {
         const { productId } = req.params;
         const { quantity } = req.body;
+        console.log('Received quantity:', quantity);
+        console.log('Received productId:', productId);
         
         if (!quantity || quantity < 0) {
             return res.status(400).json({ message: 'Invalid quantity' });
@@ -54,7 +56,7 @@ router.put('/items/:productId', isBuyer, async (req, res) => {
 });
 
 // Remove item from cart
-router.delete('/items/:productId', isBuyer, async (req, res) => {
+router.delete('/:productId', isBuyer, async (req, res) => {
     try {
         const { productId } = req.params;
         const cart = await cartService.removeFromCart(req.user.userId, productId);

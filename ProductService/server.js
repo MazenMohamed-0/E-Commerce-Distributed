@@ -2,12 +2,17 @@ const express = require('express');
 const mongoose = require('mongoose');
 const productRoutes = require('./routes/productRoutes');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config();
 
 const app = express();
 const cors = require('cors');
 app.use(cors());
 app.use(express.json());
+
+console.log('Product Service: Environment Variables Loaded');
+console.log('Product Service: Mongo URI:', process.env.MONGO_URI);
+console.log('Product Service: JWT Secret:', process.env.JWT_SECRET);
+
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -16,5 +21,5 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
 
 app.use('/products', productRoutes);
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`Product Service running on port ${PORT}`)); 
+const PORT = 3002;
+app.listen(PORT, () => console.log(`Product Service running on port ${PORT}`));

@@ -16,32 +16,34 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
+    required: function() {
+      return !this.oauthProvider;
+    },
     minlength: 6
-  },
-  role: {
-    type: String,
-    enum: ['admin', 'buyer', 'seller'],
-    default: 'buyer'
   },
   oauthProvider: {
     type: String,
-    enum: ['google', 'facebook', null],
-    default: null
+    enum: ['google', 'facebook'],
+    required: false
   },
   oauthId: {
     type: String,
-    sparse: true
+    required: false
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'suspended'],
+    default: 'approved' // Default to approved for all users except sellers
   },
   createdAt: {
     type: Date,
     default: Date.now
   }
-});
+}, { discriminatorKey: 'role' });
 
-// Only hash password if it's modified and not empty (for OAuth users)
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password') || !this.password) return next();
-  
+// Hash password before saving
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -51,9 +53,12 @@ userSchema.pre('save', async function (next) {
   }
 });
 
-userSchema.methods.comparePassword = async function (candidatePassword) {
+// Method to compare password
+userSchema.methods.comparePassword = async function(candidatePassword) {
   if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;

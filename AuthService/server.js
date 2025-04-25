@@ -1,18 +1,24 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config();
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('./services/passport');
 const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/user');
+const path = require('path');
 
 const app = express();
 
 // Middleware
 app.use(express.json());
 const cors = require('cors');
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3001'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -35,21 +41,13 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
 
 // Routes
 app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
 
-// OAuth success route
-app.get('/auth/success', (req, res) => {
-  const token = req.query.token;
-  res.send(`
-    <html>
-      <body>
-        <script>
-          window.opener.postMessage({ token: '${token}' }, '*');
-          window.close();
-        </script>
-      </body>
-    </html>
-  `);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something broke!' });
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Auth Service running on port ${PORT}`));
