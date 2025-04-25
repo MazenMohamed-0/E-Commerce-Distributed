@@ -52,6 +52,20 @@ services:
       - auth-service
       - product-service
 
+  cart-service:
+    build: ./CartService
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - MONGO_URI=mongodb://mongodb:27017/cart-service
+      - JWT_SECRET=your_jwt_secret_key_here
+      - PRODUCT_SERVICE_URL=http://product-service:3001
+    depends_on:
+      - mongodb
+      - auth-service
+      - product-service
+
   frontend:
     build: ./Frontend
     ports:
@@ -60,6 +74,7 @@ services:
       - VUE_APP_AUTH_SERVICE_URL=http://localhost:3000
       - VUE_APP_PRODUCT_SERVICE_URL=http://localhost:3001
       - VUE_APP_ORDER_SERVICE_URL=http://localhost:3002
+      - VUE_APP_CART_SERVICE_URL=http://localhost:3003
       # Add OAuth configuration for frontend
       - VUE_APP_GOOGLE_CLIENT_ID=your_google_client_id
       - VUE_APP_FACEBOOK_APP_ID=your_facebook_app_id
@@ -67,6 +82,7 @@ services:
       - auth-service
       - product-service
       - order-service
+      - cart-service
 
 volumes:
-  mongodb_data: 
+  mongodb_data:

@@ -123,6 +123,40 @@ router.get('/users', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
+// Service-to-service route to get multiple users by IDs (for Product Service)
+router.get('/users/batch', async (req, res) => {
+    try {
+        const { ids } = req.query;
+        
+        if (!ids) {
+            return res.status(400).json({ message: 'User IDs are required' });
+        }
+        
+        const userIds = ids.split(',');
+        const users = await User.find({ _id: { $in: userIds } }).select('name email storeName role');
+        
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Service-to-service route to get user by ID (for Product Service)
+router.get('/users/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findById(userId).select('name email storeName role');
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 router.patch('/users/:userId/role', verifyToken, isAdmin, async (req, res) => {
     try {
         const { userId } = req.params;

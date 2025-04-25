@@ -18,10 +18,6 @@ const verifyToken = (req, res, next) => {
 
 // Middleware to check if user is admin
 const isAuthorized = (req, res, next) => {
-    console.log("role", req.user.role);
-    if(req.user.role === 'seller') {
-        console.log("seller role");
-    }
     if (req.user.role === 'admin' || req.user.role === 'seller') {
         return next();
     }

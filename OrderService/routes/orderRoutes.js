@@ -1,18 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const orderService = require('../services/orderService');
-const verifyToken = require('../middleware/authMiddleware');
+const { verifyToken, isAuthorized } = require('../middleware/authMiddleware');
 
 // Apply JWT verification to all routes
 router.use(verifyToken);
 
 // Get all orders (admin only)
-router.get('/', async (req, res) => {
+router.get('/', isAuthorized, async (req, res) => {
     try {
-        // Check if user is admin
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied. Admin only.' });
-        }
         const orders = await orderService.getAllOrders();
         res.json(orders);
     } catch (error) {
@@ -21,7 +17,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get orders for the authenticated user
-router.get('/my-orders', async (req, res) => {
+router.get('/my-orders', isAuthorized, async (req, res) => {
     try {
         const orders = await orderService.getOrdersByUser(req.user.userId);
         res.json(orders);
@@ -31,15 +27,9 @@ router.get('/my-orders', async (req, res) => {
 });
 
 // Get single order (only if user owns the order or is admin)
-router.get('/:id', async (req, res) => {
+router.get('/:id', isAuthorized, async (req, res) => {
     try {
         const order = await orderService.getOrderById(req.params.id);
-        
-        // Check if user owns the order or is admin
-        if (order.userId.toString() !== req.user.userId && req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied' });
-        }
-        
         res.json(order);
     } catch (error) {
         res.status(404).json({ message: error.message });
@@ -47,7 +37,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create order (automatically associates with authenticated user)
-router.post('/', async (req, res) => {
+router.post('/', isAuthorized, async (req, res) => {
     try {
         const orderData = {
             ...req.body,
@@ -61,11 +51,8 @@ router.post('/', async (req, res) => {
 });
 
 // Update order status (admin only)
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', isAuthorized, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied. Admin only.' });
-        }
         const updatedOrder = await orderService.updateOrderStatus(req.params.id, req.body.status);
         res.json(updatedOrder);
     } catch (error) {
@@ -74,15 +61,8 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 // Update payment status
-router.patch('/:id/payment', async (req, res) => {
+router.patch('/:id/payment', isAuthorized, async (req, res) => {
     try {
-        const order = await orderService.getOrderById(req.params.id);
-        
-        // Check if user owns the order or is admin
-        if (order.userId.toString() !== req.user.userId && req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied' });
-        }
-        
         const updatedOrder = await orderService.updatePaymentStatus(req.params.id, req.body.paymentStatus);
         res.json(updatedOrder);
     } catch (error) {

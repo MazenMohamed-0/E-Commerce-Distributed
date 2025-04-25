@@ -26,10 +26,16 @@ router.get('/:id', async (req, res) => {
 // Protected routes (require authentication and admin role)
 
 
-// Create product (admin only)
+// Create product (admin or seller only)
 router.post('/', isAuthorized, async (req, res) => {
     try {
-        const newProduct = await productService.createProduct(req.body);
+        // Add the creator information to the product data
+        const productData = {
+            ...req.body,
+            createdBy: req.user.userId
+        };
+        
+        const newProduct = await productService.createProduct(productData);
         res.status(201).json(newProduct);
     } catch (error) {
         res.status(400).json({ message: error.message });

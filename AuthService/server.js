@@ -1,11 +1,11 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('./services/passport');
 const authRoutes = require('./routes/authRoutes');
-const path = require('path');
 
 const app = express();
 
@@ -51,5 +51,5 @@ app.get('/auth/success', (req, res) => {
   `);
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = 3000;
 app.listen(PORT, () => console.log(`Auth Service running on port ${PORT}`));

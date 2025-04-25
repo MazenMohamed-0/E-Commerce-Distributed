@@ -15,14 +15,10 @@ const verifyToken = (req, res, next) => {
         return res.status(401).json({ message: 'Invalid token' });
     }
 };
-
-const isAuthorized = (req, res, next) => {
-    if (req.user.role === 'admin' || req.user.role === 'buyer') {
-        return next();
+const isBuyer = (req, res, next) => {
+    if (req.user.role !== 'buyer' ){
+        return res.status(401).json({message: 'Buyer role only can do this action'});
     }
-    else{
-        return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action' });
-    }
-};
-
-module.exports = { verifyToken, isAuthorized }; 
+    next();
+}
+module.exports = { verifyToken, isBuyer };
