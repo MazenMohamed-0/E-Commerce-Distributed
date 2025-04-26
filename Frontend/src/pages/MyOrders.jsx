@@ -74,7 +74,7 @@ const MyOrders = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'processing':
-        return 'primary';
+        return 'warning';
       case 'shipped':
         return 'info';
       case 'delivered':
@@ -112,35 +112,34 @@ const MyOrders = () => {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: 'center' }}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Loading your orders...</Typography>
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Typography variant="h4" gutterBottom>
         My Orders
       </Typography>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
       {orders.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="h6" gutterBottom>
-            You haven't placed any orders yet
+        <Paper sx={{ p: 3, textAlign: 'center' }}>
+          <Typography variant="h6" color="text.secondary">
+            You haven't placed any orders yet.
           </Typography>
           <Button
             variant="contained"
             color="primary"
-            onClick={() => navigate('/')}
             sx={{ mt: 2 }}
+            onClick={() => navigate('/')}
           >
             Start Shopping
           </Button>
@@ -153,41 +152,41 @@ const MyOrders = () => {
                 <TableRow>
                   <TableCell>Order ID</TableCell>
                   <TableCell>Date</TableCell>
-                  <TableCell>Total</TableCell>
+                  <TableCell>Total Amount</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Payment</TableCell>
+                  <TableCell>Payment Status</TableCell>
+                  <TableCell>Payment Type</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {paginatedOrders.map((order) => (
                   <TableRow key={order._id}>
+                    <TableCell>{order._id}</TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                        {order._id.substring(0, 10)}...
-                      </Typography>
+                      {new Date(order.createdAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell>{formatDate(order.createdAt)}</TableCell>
                     <TableCell>${order.totalAmount.toFixed(2)}</TableCell>
                     <TableCell>
                       <Chip
-                        label={order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                        label={order.status}
                         color={getStatusColor(order.status)}
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+                        label={order.paymentStatus}
                         color={getPaymentStatusColor(order.paymentStatus)}
                         size="small"
                       />
                     </TableCell>
+                    <TableCell>{order.paymentType}</TableCell>
                     <TableCell>
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => navigate(`/order-confirmation/${order._id}`)}
+                        onClick={() => navigate(`/order/${order._id}`)}
                       >
                         View Details
                       </Button>
@@ -199,7 +198,7 @@ const MyOrders = () => {
           </TableContainer>
 
           {totalPages > 1 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
               <Pagination
                 count={totalPages}
                 page={page}
@@ -210,16 +209,6 @@ const MyOrders = () => {
           )}
         </>
       )}
-
-      <Box sx={{ mt: 4, textAlign: 'center' }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => navigate('/')}
-        >
-          Continue Shopping
-        </Button>
-      </Box>
     </Container>
   );
 };

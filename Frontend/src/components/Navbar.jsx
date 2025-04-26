@@ -36,6 +36,11 @@ const Navbar = () => {
     handleClose();
   };
 
+  const handleRecentOrders = () => {
+    navigate('/my-orders');
+    handleClose();
+  };
+
   return (
     <AppBar position="static">
       <Toolbar>
@@ -70,6 +75,7 @@ const Navbar = () => {
                 open={Boolean(anchorEl)}
                 onClose={handleClose}
               >
+                <MenuItem onClick={handleRecentOrders}>Recent Orders</MenuItem>
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
             </>

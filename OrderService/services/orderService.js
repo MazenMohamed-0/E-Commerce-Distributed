@@ -25,7 +25,40 @@ class OrderService {
             if (!order) {
                 throw new Error('Order not found');
             }
-            return order;
+
+            // Get product details for each item in the order
+            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
+            const orderWithProducts = { ...order.toObject() };
+
+            // Fetch product details for each item
+            const productPromises = order.items.map(async (item) => {
+                // Convert Mongoose subdocument to plain object
+                const plainItem = item.toObject ? item.toObject() : item;
+                try {
+                    const response = await axios.get(
+                        `${productServiceUrl}/products/${plainItem.productId}`,
+                        {
+                            timeout: 5000 // 5 second timeout
+                        }
+                    );
+                    return {
+                        ...plainItem,
+                        productDetails: response.data
+                    };
+                } catch (error) {
+                    console.error(`Error fetching product ${plainItem.productId}:`, error.message);
+                    return {
+                        ...plainItem,
+                        productDetails: null
+                    };
+                }
+            });
+
+            // Wait for all product details to be fetched
+            const itemsWithProducts = await Promise.all(productPromises);
+            orderWithProducts.items = itemsWithProducts;
+
+            return orderWithProducts;
         } catch (error) {
             throw new Error('Error fetching order: ' + error.message);
         }

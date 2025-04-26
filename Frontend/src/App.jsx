@@ -20,6 +20,7 @@ import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import OrderConfirmation from './pages/OrderConfirmation';
 import MyOrders from './pages/MyOrders';
+import OrderDetails from './pages/OrderDetails';
 
 const theme = createTheme({
   palette: {
@@ -38,57 +39,37 @@ function App() {
       <CssBaseline />
       <AuthProvider>
         <CartProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/oauth-callback" element={<OAuthCallback />} />
-            <Route path="/select-role" element={<SelectRole />} />
-            <Route path="/" element={<Home />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route 
-              path="/checkout" 
-              element={
-                <PrivateRoute requireBuyer={true}>
-                  <Checkout />
-                </PrivateRoute>
-              } 
-            />
-            <Route 
-              path="/order-confirmation/:orderId" 
-              element={
-                <PrivateRoute requireBuyer={true}>
-                  <OrderConfirmation />
-                </PrivateRoute>
-              } 
-            />
-            <Route
-              path="/admin"
-              element={
-                <PrivateRoute requireAdmin={true}>
-                  <AdminHome />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/seller"
-              element={
-                <PrivateRoute requireSeller={true}>
-                  <SellerDashboard />
-                </PrivateRoute>
-              }
-            />
-            <Route path="/product/:id" element={<ProductDetails />} />
-            <Route 
-              path="/my-orders" 
-              element={
-                <PrivateRoute requireBuyer={true}>
-                  <MyOrders />
-                </PrivateRoute>
-              } 
-            />
-          </Routes>
-        </Router>
+          <Router>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/oauth-callback" element={<OAuthCallback />} />
+              <Route path="/select-role" element={<SelectRole />} />
+              <Route path="/product/:id" element={<ProductDetails />} />
+              <Route path="/cart" element={<Cart />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/order-confirmation/:id" element={<OrderConfirmation />} />
+              <Route path="/my-orders" element={<MyOrders />} />
+              <Route path="/order/:id" element={<OrderDetails />} />
+              <Route
+                path="/admin/*"
+                element={
+                  <PrivateRoute>
+                    <AdminHome />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/seller/*"
+                element={
+                  <PrivateRoute requireSeller>
+                    <SellerDashboard />
+                  </PrivateRoute>
+                }
+              />
+            </Routes>
+          </Router>
         </CartProvider>
       </AuthProvider>
     </ThemeProvider>
