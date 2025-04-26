@@ -78,7 +78,7 @@ const Navbar = () => {
               <Button color="inherit" onClick={() => navigate('/login')}>
                 Login
               </Button>
-              <Button color="inherit" onClick={() => navigate('/signup')}>
+              <Button color="inherit" onClick={() => navigate('/register')}>
                 Sign Up
               </Button>
             </>
