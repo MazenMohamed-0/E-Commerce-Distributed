@@ -439,6 +439,36 @@ export const CartProvider = ({ children }) => {
 
   const getTotal = () => totalAmount;
 
+  // Add a function to clear the cart
+  const clearCart = async () => {
+    try {
+      // Check if user is authenticated
+      const token = localStorage.getItem('token');
+      if (token && user && user.role === 'buyer') {
+        // Clear cart in the Cart Service
+        await axios.delete(`${CART_SERVICE_URL}/cart`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        console.log('Cart cleared in the Cart Service');
+      }
+      
+      // Clear local cart
+      localStorage.setItem('cart', JSON.stringify([]));
+      setCartItems([]);
+      setTotalAmount(0);
+      console.log('Cart cleared locally');
+      
+      return true;
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+      setError({
+        message: 'Failed to clear cart. Please try again.',
+        severity: 'error'
+      });
+      return false;
+    }
+  };
+
   return (
     <CartContext.Provider value={{
       cartItems,
@@ -447,7 +477,8 @@ export const CartProvider = ({ children }) => {
       updateQuantity,
       getCartItems,
       getCartCount,
-      getTotal
+      getTotal,
+      clearCart
     }}>
       {children}
       <Snackbar 

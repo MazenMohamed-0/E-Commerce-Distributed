@@ -17,6 +17,9 @@ import PrivateRoute from './components/PrivateRoute';
 import SellerDashboard from './pages/Seller/SellerDashboard';
 import ProductDetails from './pages/ProductDetails';
 import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import OrderConfirmation from './pages/OrderConfirmation';
+import MyOrders from './pages/MyOrders';
 
 const theme = createTheme({
   palette: {
@@ -42,7 +45,23 @@ function App() {
             <Route path="/oauth-callback" element={<OAuthCallback />} />
             <Route path="/select-role" element={<SelectRole />} />
             <Route path="/" element={<Home />} />
-              <Route path="/cart" element={<Cart />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route 
+              path="/checkout" 
+              element={
+                <PrivateRoute requireBuyer={true}>
+                  <Checkout />
+                </PrivateRoute>
+              } 
+            />
+            <Route 
+              path="/order-confirmation/:orderId" 
+              element={
+                <PrivateRoute requireBuyer={true}>
+                  <OrderConfirmation />
+                </PrivateRoute>
+              } 
+            />
             <Route
               path="/admin"
               element={
@@ -59,7 +78,15 @@ function App() {
                 </PrivateRoute>
               }
             />
-              <Route path="/product/:id" element={<ProductDetails />} />
+            <Route path="/product/:id" element={<ProductDetails />} />
+            <Route 
+              path="/my-orders" 
+              element={
+                <PrivateRoute requireBuyer={true}>
+                  <MyOrders />
+                </PrivateRoute>
+              } 
+            />
           </Routes>
         </Router>
         </CartProvider>

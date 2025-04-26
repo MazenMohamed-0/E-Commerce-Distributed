@@ -25,6 +25,39 @@ router.get('/:id', async (req, res) => {
 // Protected routes (require authentication)
 router.use(verifyToken);
 
+// Special endpoint for order processing to reduce stock
+// This endpoint is specifically for the Order Service to reduce stock during checkout
+router.post('/:id/reduce-stock', async (req, res) => {
+    try {
+        // Check if this is a service-to-service call from the Order Service
+        const isServiceCall = req.headers['x-service-type'] === 'order-service';
+        
+        // Only allow stock reduction if it's from Order Service or an admin/seller
+        if (!isServiceCall && req.user.role !== 'admin' && req.user.role !== 'seller') {
+            return res.status(403).json({ 
+                message: 'Forbidden: Only Order Service, admins, or sellers can reduce stock' 
+            });
+        }
+        
+        const { quantity, orderId } = req.body;
+        
+        if (!quantity || quantity <= 0) {
+            return res.status(400).json({ message: 'Invalid quantity specified' });
+        }
+        
+        const result = await productService.reduceProductStock(
+            req.params.id, 
+            quantity,
+            orderId
+        );
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Error reducing stock:', error);
+        res.status(400).json({ message: error.message });
+    }
+});
+
 // Create product (admin or seller only)
 router.post('/', isAuthorized, async (req, res) => {
     try {
@@ -61,4 +94,4 @@ router.delete('/:id', isAuthorized, async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

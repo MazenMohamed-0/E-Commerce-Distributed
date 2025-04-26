@@ -16,8 +16,26 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-const isAuthorized = (req, res, next) => {
-    if (req.user.role === 'admin' || req.user.role === 'buyer') {
+const isBuyer = (req, res, next) => {
+    if (req.user.role === 'buyer') {
+        return next();
+    }
+    else{
+        return res.status(403).json({ message: 'Forbidden: Only buyers can perform this action' });
+    }
+};
+
+const isSeller = (req, res, next) => {
+    if (req.user.role === 'seller') {
+        return next();
+    }
+    else{
+        return res.status(403).json({ message: 'Forbidden: Only sellers can perform this action' });
+    }
+};
+
+const isAdmin = (req, res, next) => {
+    if (req.user.role === 'admin') {
         return next();
     }
     else{
@@ -25,4 +43,14 @@ const isAuthorized = (req, res, next) => {
     }
 };
 
-module.exports = { verifyToken, isAuthorized }; 
+// Keep the original isAuthorized for backward compatibility or routes that allow both roles
+const isAuthorized = (req, res, next) => {
+    if (req.user.role === 'seller' || req.user.role === 'buyer') {
+        return next();
+    }
+    else{
+        return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action' });
+    }
+};
+
+module.exports = { verifyToken, isAuthorized, isAdmin, isBuyer, isSeller };

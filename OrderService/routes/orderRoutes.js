@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const orderService = require('../services/orderService');
-const { verifyToken, isAuthorized } = require('../middleware/authMiddleware');
+const { verifyToken, isAuthorized, isAdmin, isBuyer, isSeller } = require('../middleware/authMiddleware');
 
 // Apply JWT verification to all routes
+console.log('Applying JWT verification to all routes');
 router.use(verifyToken);
 
 // Get all orders (admin only)
-router.get('/', isAuthorized, async (req, res) => {
+router.get('/', isAdmin, async (req, res) => {
     try {
         const orders = await orderService.getAllOrders();
         res.json(orders);
@@ -16,10 +17,24 @@ router.get('/', isAuthorized, async (req, res) => {
     }
 });
 
-// Get orders for the authenticated user
-router.get('/my-orders', isAuthorized, async (req, res) => {
+// Get orders for the authenticated user (buyer only)
+router.get('/my-orders', isBuyer, async (req, res) => {
     try {
         const orders = await orderService.getOrdersByUser(req.user.userId);
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Get orders for products created by the seller (seller only)
+router.get('/seller-orders', isSeller, async (req, res) => {
+    try {
+        // Get the token from the request headers
+        const token = req.headers.authorization;
+        
+        // Get orders for products created by this seller
+        const orders = await orderService.getOrdersForSeller(req.user.userId, token);
         res.json(orders);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -36,13 +51,17 @@ router.get('/:id', isAuthorized, async (req, res) => {
     }
 });
 
-// Create order (automatically associates with authenticated user)
-router.post('/', isAuthorized, async (req, res) => {
+// Create order (buyer only)
+router.post('/', isBuyer, async (req, res) => {
     try {
+        // Add user ID from the authenticated user
         const orderData = {
             ...req.body,
-            userId: req.user.userId // Automatically set the user ID from the token
+            userId: req.user.userId,
+            // Pass the token to the service for inter-service communication
+            token: req.headers.authorization
         };
+        
         const newOrder = await orderService.createOrder(orderData);
         res.status(201).json(newOrder);
     } catch (error) {
@@ -51,7 +70,7 @@ router.post('/', isAuthorized, async (req, res) => {
 });
 
 // Update order status (admin only)
-router.patch('/:id/status', isAuthorized, async (req, res) => {
+router.patch('/:id/status', isAdmin, async (req, res) => {
     try {
         const updatedOrder = await orderService.updateOrderStatus(req.params.id, req.body.status);
         res.json(updatedOrder);
@@ -60,8 +79,8 @@ router.patch('/:id/status', isAuthorized, async (req, res) => {
     }
 });
 
-// Update payment status
-router.patch('/:id/payment', isAuthorized, async (req, res) => {
+// Update payment status (admin only)
+router.patch('/:id/payment', isAdmin, async (req, res) => {
     try {
         const updatedOrder = await orderService.updatePaymentStatus(req.params.id, req.body.paymentStatus);
         res.json(updatedOrder);
@@ -70,4 +89,4 @@ router.patch('/:id/payment', isAuthorized, async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

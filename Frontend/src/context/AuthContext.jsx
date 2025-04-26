@@ -349,6 +349,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Add a function to get the token
+  const getToken = () => {
+    return localStorage.getItem('token');
+  };
+
   const value = {
     user,
     loading,
@@ -358,7 +363,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     getProfile,
     handleOAuthLogin,
-    updateUserRole
+    updateUserRole,
+    token: getToken() // Expose the token directly
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

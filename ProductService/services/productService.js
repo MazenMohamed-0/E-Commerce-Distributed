@@ -194,6 +194,55 @@ class ProductService {
             throw new Error('Error deleting product: ' + error.message);
         }
     }
+
+    async getProductsBySeller(sellerId) {
+        try {
+            // Find all products created by this seller
+            const products = await Product.find({ createdBy: sellerId });
+            console.log(`Found ${products.length} products for seller ${sellerId}`);
+            
+            return products;
+        } catch (error) {
+            console.error('Error in getProductsBySeller:', error);
+            throw new Error('Error fetching seller products: ' + error.message);
+        }
+    }
+
+    async reduceProductStock(productId, quantity, orderId) {
+        try {
+            // Find the product
+            const product = await Product.findById(productId);
+            if (!product) {
+                throw new Error('Product not found');
+            }
+            
+            // Check if enough stock is available
+            if (product.stock < quantity) {
+                throw new Error(`Not enough stock available. Requested: ${quantity}, Available: ${product.stock}`);
+            }
+            
+            // Reduce the stock
+            const newStock = product.stock - quantity;
+            product.stock = newStock;
+            product.updatedAt = Date.now();
+            
+            // Save the updated product
+            await product.save();
+            
+            console.log(`Reduced stock for product ${productId} from ${product.stock + quantity} to ${newStock} for order ${orderId}`);
+            
+            return { 
+                message: 'Stock updated successfully', 
+                productId, 
+                previousStock: product.stock + quantity,
+                newStock,
+                orderId 
+            };
+        } catch (error) {
+            console.error('Error reducing product stock:', error);
+            throw new Error('Error reducing product stock: ' + error.message);
+        }
+    }
 }
 
-module.exports = new ProductService(); 
+module.exports = new ProductService();
