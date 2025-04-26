@@ -1,7 +1,7 @@
 # 🛍️ E-Commerce Distributed System
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18-green)](https://nodejs.org/)
-[![Vue.js](https://img.shields.io/badge/Vue.js-3-blue)](https://vuejs.org/)
+[![React](https://img.shields.io/badge/React-18-blue)](https://react.dev/)
 [![Docker](https://img.shields.io/badge/Docker-✓-blue)](https://www.docker.com/)
 [![Microservices](https://img.shields.io/badge/Architecture-Microservices-orange)](https://microservices.io/)
 [![OAuth](https://img.shields.io/badge/OAuth-Google%2FFacebook-green)](https://oauth.net/)
@@ -18,7 +18,7 @@
 
 # 🛒 Distributed E-Commerce Microservices System
 
-A scalable and modular e-commerce application built using Node.js, Vue.js, MongoDB, Docker, and Kubernetes. The system follows a microservices architecture and supports authentication, product management, order processing, and a Vue-based frontend.
+A scalable and modular e-commerce application built using Node.js, React, MongoDB, Docker, and Kubernetes. The system follows a microservices architecture and supports authentication, product management, order processing, cart management, and a React-based frontend.
 
 ## 📁 Project Structure
 
@@ -76,7 +76,22 @@ E-Commerce-Distributed/
 │   └── middleware/
 │       └── authMiddleware.js
 │
-└── Frontend/            # 🖥️ Vue.js Frontend Application
+├── CartService/          # 🛒 Cart Management Service
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── server.js
+│   ├── .env
+│   ├── models/
+│   │   └── Cart.js
+│   ├── routes/
+│   │   └── cartRoutes.js
+│   ├── services/
+│   │   └── cartService.js
+│   └── middleware/
+│       └── authMiddleware.js
+│
+└── Frontend/            # 🖥️ React Frontend Application
     ├── .gitignore
     ├── Dockerfile
     ├── package.json
@@ -86,26 +101,15 @@ E-Commerce-Distributed/
     ├── public/
     │   └── favicon.ico
     ├── src/
-    │   ├── main.js              # Application entry point
-    │   ├── App.vue              # Root Vue component
-    │   ├── api/
-    │   │   └── Endpoints.js     # API endpoint configurations
-    │   ├── assets/              # Static assets (images, fonts, etc.)
-    │   ├── components/          # Reusable Vue components
-    │   │   ├── LoginForm.vue    # Login form component
-    │   │   └── SocialLogin.vue  # Social login buttons
-    │   ├── composables/         # Vue 3 composables
-    │   │   └── useAuth.js       # Authentication composable
-    │   ├── plugins/             # Vue plugins
-    │   ├── router/
-    │   │   └── index.js         # Vue Router configuration
-    │   ├── stores/              # Pinia state management
-    │   │   ├── User.js          # User state management
-    │   │   └── Cart.js          # Shopping cart state
-    │   ├── styles/              # Global styles
-    │   └── views/               # Page components
-    │       ├── Login.vue        # Login page view
-    │       └── Profile.vue      # User profile view
+    │   ├── main.jsx              # Application entry point
+    │   ├── App.jsx               # Root React component
+    │   ├── api/                  # API endpoint configurations (if any)
+    │   ├── assets/               # Static assets (images, fonts, etc.)
+    │   ├── components/           # Reusable React components
+    │   ├── context/              # React context providers (Auth, Cart, etc.)
+    │   ├── pages/                # Page components (Home, Login, Register, etc.)
+    │   ├── styles/               # Global styles
+    │   └── config.js             # Configuration (API URLs, etc.)
     └── .vscode/                 # VS Code configuration
 ```
 
@@ -114,14 +118,13 @@ E-Commerce-Distributed/
 The system follows a microservices architecture with the following components:
 
 ### Frontend 🖥️
-- Single-page application built with Vue.js 3
-- Uses Pinia for state management
-- Implements Vue 3 Composition API
+- Single-page application built with React 18 + Vite
+- Uses React Context for state management (Auth, Cart, etc.)
 - Communicates with backend services through REST APIs
 - Provides user interface for product browsing, ordering, and account management
 - Includes social login integration (Google & Facebook)
-- Organized with components, views, and services for better maintainability
-- Includes testing setup for both unit and end-to-end tests
+- Organized with components, pages, and context for maintainability
+- Modern UI with Material-UI (MUI)
 
 ### Backend Services
 
@@ -146,15 +149,20 @@ The system follows a microservices architecture with the following components:
    - Implements order cancellation
    - Implements proper middleware for security
 
+4. **CartService** 🛒
+   - Manages user shopping carts
+   - Handles adding, updating, and removing items from the cart
+   - Provides endpoints to get, update, and clear the cart
+   - Ensures cart is cleared after successful order
+
 ## 🛠️ Technology Stack
 
 ### Frontend
-- **Vue.js 3** - Progressive JavaScript framework
-- **Pinia** - State management
-- **Vue Router** - Client-side routing
+- **React 18** - Modern JavaScript UI library
+- **Vite** - Fast build tool
+- **React Router** - Client-side routing
 - **Axios** - HTTP client
-- **Tailwind CSS** - Utility-first CSS framework
-- **Vue 3 Composition API** - Composition-based API
+- **Material-UI (MUI)** - UI component library
 
 ### Backend Services
 - **Node.js** - JavaScript runtime
@@ -179,6 +187,7 @@ The system follows a microservices architecture with the following components:
    cp AuthService/.env.example AuthService/.env
    cp ProductService/.env.example ProductService/.env
    cp OrderService/.env.example OrderService/.env
+   cp CartService/.env.example CartService/.env
    cp Frontend/.env.example Frontend/.env
 
    # Update OAuth credentials in AuthService/.env
@@ -191,7 +200,11 @@ The system follows a microservices architecture with the following components:
 3. Install dependencies
    ```bash
    # Install dependencies for all services
-   npm run install-all
+   cd AuthService && npm install
+   cd ../ProductService && npm install
+   cd ../OrderService && npm install
+   cd ../CartService && npm install
+   cd ../Frontend && npm install
    ```
 
 4. Start the application
@@ -201,10 +214,11 @@ The system follows a microservices architecture with the following components:
    ```
 
 5. Access the application
-   - Frontend: http://localhost:8080
-   - Auth Service: http://localhost:3000
-   - Product Service: http://localhost:3001
-   - Order Service: http://localhost:3002
+   - Frontend: http://localhost:5173
+   - Auth Service: http://localhost:3001
+   - Product Service: http://localhost:3002
+   - Order Service: http://localhost:3003
+   - Cart Service: http://localhost:3004
 
 ## 📚 API Documentation
 
@@ -239,6 +253,13 @@ The system follows a microservices architecture with the following components:
 - `DELETE /api/orders/:id` - Cancel order
 - `GET /api/orders/:id` - Get order details
 
+### Cart Service
+- `GET /api/cart` - Get current user's cart
+- `POST /api/cart` - Add item to cart
+- `PUT /api/cart` - Update cart (e.g., change quantity)
+- `DELETE /api/cart` - Clear cart
+- `DELETE /api/cart/item/:itemId` - Remove a specific item from cart
+
 ## 💻 Development
 
 Each service can be developed and deployed independently. The services communicate with each other through well-defined APIs, making the system scalable and maintainable. Each service follows a consistent structure with:
@@ -260,8 +281,11 @@ cd ProductService && npm run dev
 # Order Service
 cd OrderService && npm run dev
 
+# Cart Service
+cd CartService && npm run dev
+
 # Frontend
-cd Frontend && npm run serve
+cd Frontend && npm run dev
 ```
 
 ### Testing
@@ -270,5 +294,6 @@ cd Frontend && npm run serve
 cd AuthService && npm test
 cd ../ProductService && npm test
 cd ../OrderService && npm test
+cd ../CartService && npm test
 cd ../Frontend && npm test
 ``` 
