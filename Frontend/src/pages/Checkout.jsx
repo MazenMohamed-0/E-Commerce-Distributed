@@ -36,7 +36,7 @@ const Checkout = () => {
   const [paymentType, setPaymentType] = useState('cash');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState('');
 
   // Redirect to cart if cart is empty
   useEffect(() => {
@@ -113,7 +113,7 @@ const Checkout = () => {
       console.log('Order creation successful:', response.data);
 
       // Order successfully created
-      setSuccess(true);
+      setSuccess('Order placed successfully! Thank you for your purchase.');
       
       // Clear the cart locally - handle the async function properly
       try {
@@ -124,10 +124,8 @@ const Checkout = () => {
         // Don't fail the order if cart clearing fails
       }
       
-      // Navigate to order confirmation after a short delay
-      setTimeout(() => {
-        navigate(`/order-confirmation/${response.data._id}`);
-      }, 2000);
+      // Navigate to home page with success message
+      navigate('/', { state: { orderSuccess: 'Order placed successfully! Thank you for your purchase.' } });
     } catch (err) {
       console.error('Error creating order:', err);
       setError(err.response?.data?.message || 'Failed to create order. Please try again.');
@@ -276,12 +274,24 @@ const Checkout = () => {
       </Box>
 
       <Snackbar
-        open={success}
+        open={!!success}
         autoHideDuration={6000}
-        onClose={() => setSuccess(false)}
+        onClose={() => setSuccess('')}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
-        <Alert severity="success">
-          Order placed successfully! Redirecting to confirmation...
+        <Alert 
+          severity="success" 
+          variant="filled"
+          sx={{ 
+            width: '100%', 
+            fontSize: '1.1rem', 
+            backgroundColor: 'success.main',
+            '& .MuiAlert-icon': {
+              fontSize: '1.5rem'
+            }
+          }}
+        >
+          {success}
         </Alert>
       </Snackbar>
     </Container>

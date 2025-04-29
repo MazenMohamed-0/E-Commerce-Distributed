@@ -93,6 +93,8 @@ export const Login = () => {
       // Redirect based on role
       if (response.user.role === 'seller') {
         navigate('/seller');
+      } else if (response.user.role === 'admin') {
+        navigate('/admin');
       } else {
         navigate('/');
       }
@@ -152,8 +154,10 @@ export const Login = () => {
             const user = await getProfile();
             if (user.role === 'seller') {
               navigate('/seller');
-          } else {
-            navigate('/');
+            } else if (user.role === 'admin') {
+              navigate('/admin');
+            } else {
+              navigate('/');
             }
           }
         } catch (err) {
@@ -179,7 +183,7 @@ export const Login = () => {
       `width=${width},height=${height},left=${left},top=${top}`
     );
 
-    const handleMessage = (event) => {
+    const handleMessage = async (event) => {
       if (event.origin !== 'http://localhost:5173') return;
       
       if (event.data.type === 'OAUTH_ERROR') {
@@ -193,7 +197,21 @@ export const Login = () => {
         if (needsRoleSelection) {
           navigate('/select-role');
         } else {
-          navigate('/');
+          // Get user profile to check role
+          try {
+            localStorage.setItem('token', token);
+            const user = await getProfile();
+            if (user.role === 'seller') {
+              navigate('/seller');
+            } else if (user.role === 'admin') {
+              navigate('/admin');
+            } else {
+              navigate('/');
+            }
+          } catch (err) {
+            console.error('Error getting user profile:', err);
+            navigate('/');
+          }
         }
         popup.close();
       }

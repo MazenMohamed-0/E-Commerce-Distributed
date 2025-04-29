@@ -90,6 +90,49 @@ class UserService {
       throw new Error('User not found');
     }
 
+    // Special handling for admin routes - allow all updates
+    if (isAdmin) {
+      console.log('Admin update with data:', updates);
+      
+      // Handle basic fields
+      if (updates.name) user.name = updates.name;
+      if (updates.email) user.email = updates.email;
+      if (updates.password) user.password = updates.password;
+      
+      // Role changes are not allowed through the edit form
+      // We keep the existing role
+      
+      // Handle status - this is what was missing
+      if (updates.status) {
+        user.status = updates.status;
+      }
+      
+      // Handle seller-specific fields
+      if (user.role === 'seller') {
+        if (updates.sellerStatus) user.sellerStatus = updates.sellerStatus;
+        if (updates.rejectionReason) user.rejectionReason = updates.rejectionReason;
+        
+        // Handle store info if provided
+        if (updates.storeInfo) {
+          user.storeInfo = {
+            ...user.storeInfo,
+            ...updates.storeInfo
+          };
+        }
+      }
+      
+      // Handle buyer-specific fields
+      if (user.role === 'buyer' && updates.shippingAddress) {
+        user.shippingAddress = updates.shippingAddress;
+      }
+      
+      await user.save();
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      return userResponse;
+    }
+    
+    // Regular user update (non-admin) with validation
     // Update allowed fields based on role
     const allowedUpdates = {
       common: ['name', 'email', 'password'],
@@ -105,8 +148,7 @@ class UserService {
     const isValidOperation = updateKeys.every(update => {
       return allowedUpdates.common.includes(update) ||
              (userRole === 'buyer' && allowedUpdates.buyer.includes(update)) ||
-             (userRole === 'seller' && allowedUpdates.seller.includes(update)) ||
-             (isAdmin && allowedUpdates.admin.includes(update));
+             (userRole === 'seller' && allowedUpdates.seller.includes(update));
     });
 
     if (!isValidOperation) {
@@ -137,13 +179,6 @@ class UserService {
     if (updates.name) user.name = updates.name;
     if (updates.email) user.email = updates.email;
     if (updates.password) user.password = updates.password;
-    if (updates.role) user.role = updates.role;
-
-    // Handle admin updates
-    if (isAdmin) {
-      if (updates.sellerStatus) user.sellerStatus = updates.sellerStatus;
-      if (updates.rejectionReason) user.rejectionReason = updates.rejectionReason;
-    }
 
     await user.save();
 
@@ -154,11 +189,10 @@ class UserService {
 
   // Delete user
   async deleteUser(id) {
-    const user = await User.findById(id);
-    if (!user) {
+    const result = await User.deleteOne({ _id: id });
+    if (result.deletedCount === 0) {
       throw new Error('User not found');
     }
-    await user.remove();
     return { message: 'User deleted successfully' };
   }
 

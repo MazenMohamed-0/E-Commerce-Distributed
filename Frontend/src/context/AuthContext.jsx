@@ -328,6 +328,12 @@ export const AuthProvider = ({ children }) => {
             return null;
           }
           
+          // Save the new token if it's returned from the backend
+          if (response.data.token) {
+            console.log('New token received, updating localStorage');
+            localStorage.setItem('token', response.data.token);
+          }
+          
           setUser(response.data);
           setError(null);
           return response.data;

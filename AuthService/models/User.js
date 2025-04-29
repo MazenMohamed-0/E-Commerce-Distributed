@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'suspended'],
+    enum: ['pending', 'approved', 'rejected'],
     default: 'approved' // Default to approved for all users except sellers
   },
   createdAt: {

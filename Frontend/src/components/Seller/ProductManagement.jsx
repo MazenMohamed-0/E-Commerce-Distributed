@@ -44,7 +44,7 @@ const ProductManagement = () => {
   const fetchProducts = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${config.PRODUCT_SERVICE_URL}/products`, {
+      const response = await axios.get(`${config.PRODUCT_SERVICE_URL}/products/seller`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setProducts(response.data);

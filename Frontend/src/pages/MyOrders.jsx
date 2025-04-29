@@ -45,9 +45,18 @@ const MyOrders = () => {
     try {
       setLoading(true);
       setError('');
+      let endpoint = '/orders/my-orders';
+      let title = 'My Orders';
+      if (user.role === 'admin') {
+        endpoint = '/orders';
+        title = 'All Orders';
+      } else if (user.role === 'seller') {
+        endpoint = '/orders/seller-orders';
+        title = 'Seller Orders';
+      }
 
       const response = await axios.get(
-        `${config.ORDER_SERVICE_URL}/orders/my-orders`,
+        `${config.ORDER_SERVICE_URL}${endpoint}`,
         {
           headers: {
             Authorization: `Bearer ${token}`

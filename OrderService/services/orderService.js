@@ -19,7 +19,7 @@ class OrderService {
         }
     }
 
-    async getOrderById(id) {
+    async getOrderById(id, token) {
         try {
             const order = await Order.findById(id);
             if (!order) {
@@ -30,6 +30,12 @@ class OrderService {
             const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
             const orderWithProducts = { ...order.toObject() };
 
+            // Prepare authorization header if token is provided
+            const headers = {};
+            if (token) {
+                headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+            }
+
             // Fetch product details for each item
             const productPromises = order.items.map(async (item) => {
                 // Convert Mongoose subdocument to plain object
@@ -38,6 +44,7 @@ class OrderService {
                     const response = await axios.get(
                         `${productServiceUrl}/products/${plainItem.productId}`,
                         {
+                            headers,
                             timeout: 5000 // 5 second timeout
                         }
                     );
@@ -47,6 +54,10 @@ class OrderService {
                     };
                 } catch (error) {
                     console.error(`Error fetching product ${plainItem.productId}:`, error.message);
+                    if (error.response) {
+                        console.error('Status:', error.response.status);
+                        console.error('Data:', error.response.data);
+                    }
                     return {
                         ...plainItem,
                         productDetails: null

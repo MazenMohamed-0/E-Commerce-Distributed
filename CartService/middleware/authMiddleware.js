@@ -16,6 +16,7 @@ const verifyToken = (req, res, next) => {
     }
 };
 const isBuyer = (req, res, next) => {
+    console.log(req.user)
     if (req.user.role !== 'buyer' ){
         return res.status(401).json({message: 'Buyer role only can do this action'});
     }

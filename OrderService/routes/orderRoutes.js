@@ -42,9 +42,12 @@ router.get('/seller-orders', isSeller, async (req, res) => {
 });
 
 // Get single order (only if user owns the order or is admin)
-router.get('/:id', isAuthorized, async (req, res) => {
+router.get('/:id', async (req, res) => {
     try {
-        const order = await orderService.getOrderById(req.params.id);
+        console.log('Fetching order with ID:', req.params.id);
+        // Pass the authentication token to the service for product details retrieval
+        const token = req.headers.authorization;
+        const order = await orderService.getOrderById(req.params.id, token);
         res.json(order);
     } catch (error) {
         res.status(404).json({ message: error.message });

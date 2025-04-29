@@ -16,8 +16,8 @@ router.get('/', isBuyer, async (req, res) => {
     }
 });
 
-// Add item to cart
 router.post('/', isBuyer, async (req, res) => {
+    console.log(req.user);
     try {
         const { productId, quantity } = req.body;
         
@@ -33,14 +33,13 @@ router.post('/', isBuyer, async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
+// Add item to cart
 
 // Update cart item quantity
 router.put('/:productId', isBuyer, async (req, res) => {
     try {
         const { productId } = req.params;
         const { quantity } = req.body;
-        console.log('Received quantity:', quantity);
-        console.log('Received productId:', productId);
         
         if (!quantity || quantity < 0) {
             return res.status(400).json({ message: 'Invalid quantity' });

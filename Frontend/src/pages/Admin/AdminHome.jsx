@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -14,20 +15,25 @@ import {
   Typography,
   IconButton,
   useTheme,
+  Button,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   People as PeopleIcon,
+  Logout as LogoutIcon,
+  ShoppingBag as OrdersIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/hooks';
 import DashboardOverview from '../../components/AdminDashboard/DashboardOverview';
 import UserManagement from '../../components/AdminDashboard/UserManagement';
+import MyOrders from '../MyOrders';
 
 const drawerWidth = 240;
 
 const AdminHome = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [selectedTab, setSelectedTab] = useState('dashboard');
   const theme = useTheme();
@@ -36,9 +42,15 @@ const AdminHome = () => {
     setMobileOpen(!mobileOpen);
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, value: 'dashboard' },
     { text: 'User Management', icon: <PeopleIcon />, value: 'users' },
+    { text: 'Orders', icon: <OrdersIcon />, value: 'orders' },
   ];
 
   const drawer = (
@@ -60,6 +72,17 @@ const AdminHome = () => {
             <ListItemText primary={item.text} />
           </ListItem>
         ))}
+        <ListItem 
+          button 
+          key="logout" 
+          onClick={handleLogout}
+          sx={{ mt: 2, color: theme.palette.error.main }}
+        >
+          <ListItemIcon>
+            <LogoutIcon color="error" />
+          </ListItemIcon>
+          <ListItemText primary="Logout" />
+        </ListItem>
       </List>
     </div>
   );
@@ -70,6 +93,8 @@ const AdminHome = () => {
         return <DashboardOverview />;
       case 'users':
         return <UserManagement />;
+      case 'orders':
+        return <MyOrders />;
       default:
         return <DashboardOverview />;
     }
@@ -94,9 +119,16 @@ const AdminHome = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {menuItems.find(item => item.value === selectedTab)?.text}
           </Typography>
+          <Button 
+            color="inherit" 
+            onClick={handleLogout}
+            startIcon={<LogoutIcon />}
+          >
+            Logout
+          </Button>
         </Toolbar>
       </AppBar>
 
@@ -145,4 +177,4 @@ const AdminHome = () => {
   );
 };
 
-export default AdminHome; 
+export default AdminHome;

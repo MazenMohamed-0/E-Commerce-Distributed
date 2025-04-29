@@ -13,6 +13,20 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Protected routes (require authentication)
+router.use(verifyToken);
+
+// Get products by seller (must be placed before /:id route)
+router.get('/seller', async (req, res) => {
+    try {
+        const products = await productService.getProductsBySeller(req.user.userId);
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Get product by ID (must be after specific routes like /seller)
 router.get('/:id', async (req, res) => {
     try {
         const product = await productService.getProductById(req.params.id);
@@ -22,11 +36,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Protected routes (require authentication)
-router.use(verifyToken);
-
 // Special endpoint for order processing to reduce stock
-// This endpoint is specifically for the Order Service to reduce stock during checkout
 router.post('/:id/reduce-stock', async (req, res) => {
     try {
         // Check if this is a service-to-service call from the Order Service

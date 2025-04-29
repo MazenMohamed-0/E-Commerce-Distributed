@@ -139,6 +139,24 @@ router.put('/admin/update-status/:id', verifyToken, isAdmin, async (req, res) =>
   }
 });
 
+// Update user (admin only) - Full update including role and status
+router.put('/admin/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const userData = req.body;
+    // Force admin privileges for this update
+    const user = await userService.updateUser(req.params.id, userData, true);
+    res.json({
+      message: 'User updated successfully',
+      user
+    });
+  } catch (error) {
+    if (error.message === 'User not found') {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Delete a user
 router.delete('/:id', verifyToken, async (req, res) => {
   try {
@@ -155,4 +173,20 @@ router.delete('/:id', verifyToken, async (req, res) => {
   }
 });
 
-module.exports = router; 
+// Delete a user (admin only)
+router.delete('/admin/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const result = await userService.deleteUser(req.params.id);
+    res.json({
+      message: 'User deleted successfully',
+      result
+    });
+  } catch (error) {
+    if (error.message === 'User not found') {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+});
+
+module.exports = router;

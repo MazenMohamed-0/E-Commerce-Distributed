@@ -424,8 +424,21 @@ router.post('/update-role', async (req, res) => {
             userData.status = newUser.status;
         }
 
-        console.log('Sending response:', userData);
-        return res.status(200).json(userData);
+        // Generate a new token with updated role information
+        const newToken = jwt.sign(
+            { 
+                userId: newUser._id,
+                role: newUser.role
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+        
+        console.log('Sending response with new token');
+        return res.status(200).json({
+            ...userData,
+            token: newToken
+        });
     } catch (error) {
         console.error('Role update error:', error);
         return res.status(500).json({ error: 'Failed to update role' });

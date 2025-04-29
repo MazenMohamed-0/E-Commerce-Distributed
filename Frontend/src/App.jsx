@@ -18,7 +18,6 @@ import SellerDashboard from './pages/Seller/SellerDashboard';
 import ProductDetails from './pages/ProductDetails';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
-import OrderConfirmation from './pages/OrderConfirmation';
 import MyOrders from './pages/MyOrders';
 import OrderDetails from './pages/OrderDetails';
 
@@ -49,13 +48,12 @@ function App() {
               <Route path="/product/:id" element={<ProductDetails />} />
               <Route path="/cart" element={<Cart />} />
               <Route path="/checkout" element={<Checkout />} />
-              <Route path="/order-confirmation/:id" element={<OrderConfirmation />} />
               <Route path="/my-orders" element={<MyOrders />} />
               <Route path="/order/:id" element={<OrderDetails />} />
               <Route
                 path="/admin/*"
                 element={
-                  <PrivateRoute>
+                  <PrivateRoute requireAdmin>
                     <AdminHome />
                   </PrivateRoute>
                 }

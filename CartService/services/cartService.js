@@ -5,7 +5,6 @@ class CartService {
     async getCart(userId) {
         try {
             let cart = await Cart.findOne({ userId });
-            console.log('getting cart for frontend :', cart);
             if (!cart) {
                 // Create a new cart if one doesn't exist
                 cart = new Cart({
@@ -24,11 +23,6 @@ class CartService {
 
     async addToCart(userId, item, token) {
         try {
-            console.log('Adding item to cart:', item);
-            console.log('User ID:', userId);
-            console.log('Token for cart service:', token);
-
-
             // Verify product exists and get details from Product Service
             const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
             const productResponse = await axios.get(`${productServiceUrl}/products/${item.productId}`, {
@@ -37,7 +31,6 @@ class CartService {
                 }
             });
             const product = productResponse.data;
-            console.log('Product data:', product);
 
             if (!product) {
                 throw new Error('Product not found');
@@ -48,7 +41,6 @@ class CartService {
             }
             
             let cart = await Cart.findOne({ userId });
-            console.log('Cart:', cart);
             if (!cart) {
                 // Create a new cart if one doesn't exist
                 cart = new Cart({

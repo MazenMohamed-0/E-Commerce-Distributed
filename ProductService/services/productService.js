@@ -195,11 +195,11 @@ class ProductService {
         }
     }
 
-    async getProductsBySeller(sellerId) {
+    async getProductsBySeller(userId) {
         try {
             // Find all products created by this seller
-            const products = await Product.find({ createdBy: sellerId });
-            console.log(`Found ${products.length} products for seller ${sellerId}`);
+            const products = await Product.find({ createdBy: userId });
+            console.log(`Found ${products.length} products for seller ${userId}`);
             
             return products;
         } catch (error) {
