@@ -1,29 +1,24 @@
-const User = require('../models/User');
+const userRepository = require('../repositories/userRepository');
 
 class UserService {
   // Get all users with role filtering
   async getAllUsers(role = null) {
-    const query = role ? { role } : {};
-    return await User.find(query).select('-password');
+    return await userRepository.findAll(role);
   }
 
   // Get all sellers with status filtering
   async getAllSellers(status = null) {
-    const query = { role: 'seller' };
-    if (status) {
-      query.sellerStatus = status;
-    }
-    return await User.find(query).select('-password');
+    return await userRepository.findAllSellers(status);
   }
 
   // Get all buyers
   async getAllBuyers() {
-    return await this.getAllUsers('buyer');
+    return await userRepository.findAll('buyer');
   }
 
   // Get user by ID
   async getUserById(id) {
-    const user = await User.findById(id).select('-password');
+    const user = await userRepository.findById(id);
     if (!user) {
       throw new Error('User not found');
     }
@@ -45,7 +40,7 @@ class UserService {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await userRepository.findByEmail(email);
     if (existingUser) {
       throw new Error('User already exists with this email');
     }
@@ -60,7 +55,7 @@ class UserService {
     }
 
     // Create new user
-    const user = new User({
+    const userToCreate = {
       name,
       email,
       password,
@@ -72,9 +67,9 @@ class UserService {
       ...(role === 'buyer' && {
         shippingAddress: userData.shippingAddress
       })
-    });
+    };
 
-    await user.save();
+    const user = await userRepository.create(userToCreate);
     
     // Return user without password
     const userResponse = user.toObject();
@@ -85,7 +80,7 @@ class UserService {
 
   // Update user with role-specific validations
   async updateUser(id, updates, isAdmin) {
-    const user = await User.findById(id);
+    const user = await userRepository.findById(id);
     if (!user) {
       throw new Error('User not found');
     }
@@ -126,8 +121,26 @@ class UserService {
         user.shippingAddress = updates.shippingAddress;
       }
       
-      await user.save();
-      const userResponse = user.toObject();
+      // Create updates object with all the changes
+      const updatedFields = {
+        name: user.name,
+        email: user.email,
+        password: user.password,
+        role: user.role,
+        status: user.status,
+        ...(user.role === 'seller' && {
+          sellerStatus: user.sellerStatus,
+          rejectionReason: user.rejectionReason,
+          storeInfo: user.storeInfo
+        }),
+        ...(user.role === 'buyer' && {
+          shippingAddress: user.shippingAddress
+        })
+      };
+      
+      // Update the user through the repository
+      const updatedUser = await userRepository.update(id, updatedFields);
+      const userResponse = updatedUser.toObject();
       delete userResponse.password;
       return userResponse;
     }
@@ -189,7 +202,7 @@ class UserService {
 
   // Delete user
   async deleteUser(id) {
-    const result = await User.deleteOne({ _id: id });
+    const result = await userRepository.delete(id);
     if (result.deletedCount === 0) {
       throw new Error('User not found');
     }
@@ -203,38 +216,39 @@ class UserService {
 
   // Get pending seller applications
   async getPendingSellers() {
-    return await User.find({ 
-      role: 'seller', 
-      sellerStatus: 'pending' 
-    }).select('-password');
+    return await userRepository.findPendingSellers();
   }
 
   // Approve seller application
   async approveSeller(sellerId) {
-    const seller = await User.findById(sellerId);
+    const seller = await userRepository.findById(sellerId);
     if (!seller || seller.role !== 'seller') {
       throw new Error('Seller not found');
     }
-    seller.sellerStatus = 'approved';
-    await seller.save();
+    
+    const updates = { sellerStatus: 'approved' };
+    await userRepository.update(sellerId, updates);
     return { message: 'Seller approved successfully' };
   }
 
   // Reject seller application
   async rejectSeller(sellerId, reason) {
-    const seller = await User.findById(sellerId);
+    const seller = await userRepository.findById(sellerId);
     if (!seller || seller.role !== 'seller') {
       throw new Error('Seller not found');
     }
-    seller.sellerStatus = 'rejected';
-    seller.rejectionReason = reason;
-    await seller.save();
+    
+    const updates = { 
+      sellerStatus: 'rejected',
+      rejectionReason: reason 
+    };
+    await userRepository.update(sellerId, updates);
     return { message: 'Seller rejected successfully' };
   }
 
   // Get seller's store information
   async getSellerStore(sellerId) {
-    const seller = await User.findById(sellerId).select('storeInfo sellerStatus');
+    const seller = await userRepository.findSellerStore(sellerId);
     if (!seller || seller.role !== 'seller') {
       throw new Error('Seller not found');
     }
@@ -243,7 +257,7 @@ class UserService {
 
   // Get buyer's shipping address
   async getBuyerShippingAddress(buyerId) {
-    const buyer = await User.findById(buyerId).select('shippingAddress');
+    const buyer = await userRepository.findBuyerShippingAddress(buyerId);
     if (!buyer || buyer.role !== 'buyer') {
       throw new Error('Buyer not found');
     }
@@ -252,20 +266,20 @@ class UserService {
 
   // Update user status (admin only)
   async updateUserStatus(userId, status) {
-    const user = await User.findById(userId);
+    const user = await userRepository.findById(userId);
     if (!user) {
       throw new Error('User not found');
     }
 
     // Validate status
-    if (!['pending', 'approved', 'rejected', 'suspended'].includes(status)) {
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
       throw new Error('Invalid status');
     }
 
-    user.status = status;
-    await user.save();
+    const updates = { status };
+    const updatedUser = await userRepository.update(userId, updates);
 
-    const userResponse = user.toObject();
+    const userResponse = updatedUser.toObject();
     delete userResponse.password;
     return userResponse;
   }

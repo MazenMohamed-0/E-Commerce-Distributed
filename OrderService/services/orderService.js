@@ -1,11 +1,11 @@
-const Order = require('../models/Order');
+const orderRepository = require('../repositories/orderRepository');
 const axios = require('axios');
 const emailService = require('./emailService');
 
 class OrderService {
     async getAllOrders() {
         try {
-            return await Order.find();
+            return await orderRepository.findAll();
         } catch (error) {
             throw new Error('Error fetching orders: ' + error.message);
         }
@@ -13,7 +13,7 @@ class OrderService {
 
     async getOrdersByUser(userId) {
         try {
-            return await Order.find({ userId });
+            return await orderRepository.findByUser(userId);
         } catch (error) {
             throw new Error('Error fetching user orders: ' + error.message);
         }
@@ -21,7 +21,7 @@ class OrderService {
 
     async getOrderById(id, token) {
         try {
-            const order = await Order.findById(id);
+            const order = await orderRepository.findById(id);
             if (!order) {
                 throw new Error('Order not found');
             }
@@ -132,7 +132,7 @@ class OrderService {
                         }
                     );
                     
-                    console.log(`Requested stock reduction for product ${item.productId} by ${item.quantity} units`);
+                    // Stock reduction request successful
                     
                 } catch (error) {
                     console.error('Error processing product:', error.message);
@@ -147,9 +147,8 @@ class OrderService {
             // Remove the token from the order data before saving
             const { token: _, ...orderDataToSave } = orderData;
             
-            // Create and save the order
-            const order = new Order(orderDataToSave);
-            const savedOrder = await order.save();
+            // Create the order using the repository
+            const savedOrder = await orderRepository.create(orderDataToSave);
             
             // Clear the user's cart
             try {
@@ -163,7 +162,7 @@ class OrderService {
                         timeout: 5000
                     }
                 );
-                console.log(`Cleared cart for user ${orderData.userId}`);
+                // Cart cleared successfully
             } catch (cartError) {
                 // Don't fail the order if cart clearing fails
                 console.error('Error clearing user cart:', cartError.message);
@@ -189,12 +188,7 @@ class OrderService {
                         userResponse.data.email
                     );
                     
-                    if (emailResult.success) {
-                        console.log(`Order confirmation email sent to ${userResponse.data.email}`);
-                        if (emailResult.previewUrl) {
-                            console.log(`Email preview URL: ${emailResult.previewUrl}`);
-                        }
-                    } else {
+                    if (!emailResult.success) {
                         console.error('Failed to send order confirmation email:', emailResult.error);
                     }
                 } else {
@@ -214,13 +208,11 @@ class OrderService {
 
     async updateOrderStatus(id, status) {
         try {
-            const order = await Order.findById(id);
-            if (!order) {
+            const updatedOrder = await orderRepository.updateStatus(id, status);
+            if (!updatedOrder) {
                 throw new Error('Order not found');
             }
-            order.status = status;
-            order.updatedAt = Date.now();
-            return await order.save();
+            return updatedOrder;
         } catch (error) {
             throw new Error('Error updating order status: ' + error.message);
         }
@@ -228,13 +220,11 @@ class OrderService {
 
     async updatePaymentStatus(id, paymentStatus) {
         try {
-            const order = await Order.findById(id);
-            if (!order) {
+            const updatedOrder = await orderRepository.updatePaymentStatus(id, paymentStatus);
+            if (!updatedOrder) {
                 throw new Error('Order not found');
             }
-            order.paymentStatus = paymentStatus;
-            order.updatedAt = Date.now();
-            return await order.save();
+            return updatedOrder;
         } catch (error) {
             throw new Error('Error updating payment status: ' + error.message);
         }
@@ -248,14 +238,10 @@ class OrderService {
             // Add timeout to prevent hanging requests
             let sellerProducts = [];
             try {
-                console.log('Fetching products for seller:', sellerId);
-                console.log('Using token:', token ? 'Token provided' : 'No token provided');
-                
                 // Ensure the token is in the correct format - the Product Service expects "Bearer token"
                 // but our middleware extracts just the token part, so we need to add "Bearer " back
                 const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
                 
-                console.log('Making request to:', `${productServiceUrl}/products/seller/${sellerId}`);
                 const productsResponse = await axios.get(
                     `${productServiceUrl}/products`, 
                     {
@@ -266,12 +252,10 @@ class OrderService {
                     }
                 );
                 
-                console.log('Product Service response received');
                 // Filter products by seller ID since we're getting all products
                 sellerProducts = productsResponse.data.filter(product => 
                     product.createdBy && product.createdBy._id === sellerId
                 );
-                console.log(`Found ${sellerProducts.length} products for seller ${sellerId}`);
             } catch (apiError) {
                 console.error('Error fetching products from Product Service:', apiError.message);
                 if (apiError.response) {
@@ -287,19 +271,14 @@ class OrderService {
             }
             
             if (!sellerProducts || sellerProducts.length === 0) {
-                console.log('No products found for seller, returning empty orders array');
                 return [];
             }
             
             // Get product IDs created by this seller
             const sellerProductIds = sellerProducts.map(product => product._id);
-            console.log('Seller product IDs:', sellerProductIds);
             
-            // Find all orders that contain any of the seller's products
-            const orders = await Order.find({
-                'items.productId': { $in: sellerProductIds }
-            });
-            console.log(`Found ${orders.length} orders containing seller products`);
+            // Find all orders that contain any of the seller's products using the repository
+            const orders = await orderRepository.findOrdersForProducts(sellerProductIds);
             
             // For each order, filter items to only include those from this seller
             const sellerOrders = orders.map(order => {

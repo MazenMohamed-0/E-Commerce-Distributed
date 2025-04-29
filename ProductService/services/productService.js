@@ -1,22 +1,17 @@
-const Product = require('../models/Product');
+const productRepository = require('../repositories/productRepository');
 const axios = require('axios');
-
-
 
 class ProductService {
     async getAllProducts() {
         try {
-            // Get all products
-            const products = await Product.find();
-            console.log('Found products:', products.map(p => ({ id: p._id, createdBy: p.createdBy })));
+            // Get all products using the repository
+            const products = await productRepository.findAll();
             
             // Get unique user IDs from products (filtering out undefined values)
             const userIds = [...new Set(products.map(product => product.createdBy).filter(id => id))];
-            console.log('Unique user IDs to fetch:', userIds);
             
             // If there are no valid user IDs, just return the products as is
             if (userIds.length === 0) {
-                console.log('No valid createdBy fields found in products');
                 return products;
             }
             
@@ -25,28 +20,22 @@ class ProductService {
             let usersMap = {};
             
             try {
-                console.log('Attempting to fetch seller store data from:', `${authServiceUrl}/users/sellers/batch?ids=${userIds.join(',')}`);
                 // Call to the Auth Service to get seller store information
                 const response = await axios.get(`${authServiceUrl}/users/sellers/batch?ids=${userIds.join(',')}`, {
                     timeout: 5000 // 5 second timeout
                 });
                 
-                console.log('Raw Auth Service response:', response.data);
-                
                 if (response.data && Array.isArray(response.data)) {
                     // Create a map of user IDs to store information
                     usersMap = response.data.reduce((map, seller) => {
-                        console.log('Processing seller:', seller);
                         map[seller._id] = {
                             _id: seller._id,
                             name: seller.name,
                             storeName: seller.storeName || 'Unknown Store',
                             role: 'seller'
                         };
-                    return map;
-                }, {});
-                
-                    console.log('Final users map:', usersMap);
+                        return map;
+                    }, {});
                 } else {
                     console.error('Invalid response format from Auth Service:', response.data);
                 }
@@ -61,13 +50,10 @@ class ProductService {
             // Merge product and user information
             const finalProducts = products.map(product => {
                 const productObj = product.toObject();
-                console.log('Processing product:', productObj._id, 'createdBy:', productObj.createdBy);
                 
                 if (productObj.createdBy && usersMap[productObj.createdBy]) {
-                    console.log('Found store info for product:', productObj._id, 'store:', usersMap[productObj.createdBy]);
                     productObj.createdBy = usersMap[productObj.createdBy];
                 } else {
-                    console.log('No store info found for product:', productObj._id, 'using default values');
                     productObj.createdBy = {
                         _id: productObj.createdBy || null,
                         name: 'Unknown',
@@ -77,8 +63,6 @@ class ProductService {
                 }
                 return productObj;
             });
-
-            console.log('Final products with store info:', finalProducts);
             return finalProducts;
         } catch (error) {
             console.error('Error in getAllProducts:', error);
@@ -88,13 +72,11 @@ class ProductService {
 
     async getProductById(id) {
         try {
-            // Get the product
-            const product = await Product.findById(id);
+            // Get the product using the repository
+            const product = await productRepository.findById(id);
             if (!product) {
                 throw new Error('Product not found');
             }
-            
-            console.log('Found product:', { id: product._id, createdBy: product.createdBy });
             
             // Fetch user information from Auth Service if createdBy exists
             const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
@@ -102,13 +84,10 @@ class ProductService {
             
             if (productObj.createdBy) {
                 try {
-                    console.log('Attempting to fetch seller store data from:', `${authServiceUrl}/users/seller/${productObj.createdBy}/store`);
                     // Call to the Auth Service to get seller store information
                     const response = await axios.get(`${authServiceUrl}/users/seller/${productObj.createdBy}/store`, {
                         timeout: 5000 // 5 second timeout
                     });
-                    
-                    console.log('Raw Auth Service response:', response.data);
                     
                     if (response.data) {
                     // Merge product and user information
@@ -118,8 +97,6 @@ class ProductService {
                             storeName: response.data.storeName,
                             role: 'seller'
                         };
-                        
-                        console.log('Updated product with store info:', productObj);
                     } else {
                         console.error('Invalid response format from Auth Service');
                         productObj.createdBy = {
@@ -161,8 +138,7 @@ class ProductService {
 
     async createProduct(productData) {
         try {
-            const product = new Product(productData);
-            return await product.save();
+            return await productRepository.create(productData);
         } catch (error) {
             throw new Error('Error creating product: ' + error.message);
         }
@@ -170,13 +146,13 @@ class ProductService {
 
     async updateProduct(id, productData) {
         try {
-            const product = await Product.findById(id);
-            if (!product) {
+            // Add updatedAt timestamp
+            productData.updatedAt = Date.now();
+            const updatedProduct = await productRepository.update(id, productData);
+            if (!updatedProduct) {
                 throw new Error('Product not found');
             }
-            Object.assign(product, productData);
-            product.updatedAt = Date.now();
-            return await product.save();
+            return updatedProduct;
         } catch (error) {
             throw new Error('Error updating product: ' + error.message);
         }
@@ -184,11 +160,10 @@ class ProductService {
 
     async deleteProduct(id) {
         try {
-            const product = await Product.findById(id);
-            if (!product) {
+            const result = await productRepository.delete(id);
+            if (!result || result.deletedCount === 0) {
                 throw new Error('Product not found');
             }
-            await product.deleteOne();
             return { message: 'Product deleted successfully' };
         } catch (error) {
             throw new Error('Error deleting product: ' + error.message);
@@ -197,8 +172,8 @@ class ProductService {
 
     async getProductsBySeller(userId) {
         try {
-            // Find all products created by this seller
-            const products = await Product.find({ createdBy: userId });
+            // Find all products created by this seller using the repository
+            const products = await productRepository.findBySeller(userId);
             console.log(`Found ${products.length} products for seller ${userId}`);
             
             return products;
@@ -210,8 +185,8 @@ class ProductService {
 
     async reduceProductStock(productId, quantity, orderId) {
         try {
-            // Find the product
-            const product = await Product.findById(productId);
+            // Find the product using the repository
+            const product = await productRepository.findById(productId);
             if (!product) {
                 throw new Error('Product not found');
             }
@@ -221,20 +196,19 @@ class ProductService {
                 throw new Error(`Not enough stock available. Requested: ${quantity}, Available: ${product.stock}`);
             }
             
-            // Reduce the stock
-            const newStock = product.stock - quantity;
-            product.stock = newStock;
-            product.updatedAt = Date.now();
+            // Calculate the new stock level
+            const previousStock = product.stock;
+            const newStock = previousStock - quantity;
             
-            // Save the updated product
-            await product.save();
+            // Update the stock using the repository
+            const updatedProduct = await productRepository.updateStock(productId, newStock);
             
-            console.log(`Reduced stock for product ${productId} from ${product.stock + quantity} to ${newStock} for order ${orderId}`);
+            console.log(`Reduced stock for product ${productId} from ${previousStock} to ${newStock} for order ${orderId}`);
             
             return { 
                 message: 'Stock updated successfully', 
                 productId, 
-                previousStock: product.stock + quantity,
+                previousStock,
                 newStock,
                 orderId 
             };
