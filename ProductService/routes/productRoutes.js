@@ -13,6 +13,14 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/:id', async (req, res) => {
+    try {
+        const product = await productService.getProductById(req.params.id);
+        res.json(product);
+    } catch (error) {
+        res.status(404).json({ message: error.message });
+    }
+});
 // Protected routes (require authentication)
 router.use(verifyToken);
 
@@ -27,14 +35,6 @@ router.get('/seller', async (req, res) => {
 });
 
 // Get product by ID (must be after specific routes like /seller)
-router.get('/:id', async (req, res) => {
-    try {
-        const product = await productService.getProductById(req.params.id);
-        res.json(product);
-    } catch (error) {
-        res.status(404).json({ message: error.message });
-    }
-});
 
 // Special endpoint for order processing to reduce stock
 router.post('/:id/reduce-stock', async (req, res) => {
