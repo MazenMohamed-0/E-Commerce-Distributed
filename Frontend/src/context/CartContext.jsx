@@ -202,9 +202,23 @@ export const CartProvider = ({ children }) => {
         }
       );
       
-      if (response.data) {
-        setCartItems(Array.isArray(response.data.items) ? response.data.items : []);
-        setTotalAmount(response.data.totalAmount || 0);
+      if (response.data && response.data.success) {
+        
+        // Refresh cart items
+        const updatedCart = await axios.get(
+          `${CART_SERVICE_URL}/cart`,
+          { 
+            headers: { 
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (updatedCart.data && updatedCart.data.cart) {
+          setCartItems(updatedCart.data.cart.items || []);
+          setTotalAmount(updatedCart.data.cart.totalAmount || 0);
+        }
       } else {
         throw new Error('Invalid response from cart service');
       }
@@ -218,10 +232,10 @@ export const CartProvider = ({ children }) => {
     setError(null);
   };
 
-  const showStockError = (available, requested) => {
+  const showStockError = (available) => {
     setError({
       severity: 'warning',
-      message: `Limited Stock Available: Only ${available} items in stock. You cannot more than ${available} items.`
+      message: `Limited Stock Available: Only ${available} items in stock. You cannot add more than ${available} items.`
     });
   };
 
@@ -232,7 +246,7 @@ export const CartProvider = ({ children }) => {
         await addToCartService(product, quantity);
       } catch (error) {
         if (error.message.includes('available in stock')) {
-          showStockError(product.stock, quantity);
+          showStockError(product.stock);
         } else {
           setError({
             severity: 'error',
@@ -255,7 +269,7 @@ export const CartProvider = ({ children }) => {
 
         // Validate against product stock
         if (totalQuantity > product.stock) {
-          showStockError(product.stock, quantity);
+          showStockError(product.stock);
           return;
         }
         
@@ -278,6 +292,12 @@ export const CartProvider = ({ children }) => {
         // Calculate total for local cart
         const newTotal = localCart.reduce((total, item) => total + (item.price * item.quantity), 0);
         setTotalAmount(newTotal);
+        
+        // Show success message for local cart
+        setError({
+          severity: 'success',
+          message: 'Product added to cart successfully'
+        });
       } catch (error) {
         console.error('Error adding to local cart:', error);
         setError({

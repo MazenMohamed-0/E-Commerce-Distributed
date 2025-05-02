@@ -1,6 +1,7 @@
 const rabbitmq = require('../../shared/rabbitmq');
 const eventTypes = require('../../shared/eventTypes');
 const winston = require('winston');
+const Seller = require('../models/Seller');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -34,6 +35,14 @@ class AuthEventHandler {
         console.log('------------------------');
         await rabbitmq.subscribe(sub.exchange, sub.queue, sub.routingKey, this.handleUserEvent.bind(this));
       }
+
+      // Subscribe to store name requests
+      await rabbitmq.subscribe(
+        'user-events',
+        'auth-service-store-queue',
+        'user.store.request',
+        this.handleStoreRequest.bind(this)
+      );
 
       logger.info('Auth service event handlers initialized');
     } catch (error) {
@@ -122,6 +131,44 @@ class AuthEventHandler {
     } catch (error) {
       logger.error('Error handling user deletion:', error);
       throw error;
+    }
+  }
+
+  async handleStoreRequest(message) {
+    try {
+      const { userId, correlationId } = message.data;
+      
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+
+      // Fetch seller information from database
+      const seller = await Seller.findById(userId);
+      if (!seller) {
+        throw new Error('Seller not found');
+      }
+
+      // Send the response back to the requesting service
+      await rabbitmq.publish('user-events', `response.${correlationId}`, {
+        type: 'user.store.response',
+        correlationId: correlationId,
+        data: {
+          storeName: seller.storeName
+        }
+      });
+
+      logger.info(`Store name sent for seller: ${seller._id} with correlation ID: ${correlationId}`);
+    } catch (error) {
+      logger.error('Error handling store request:', error);
+      if (message.correlationId) {
+        await rabbitmq.publish('user-events', `response.${message.correlationId}`, {
+          type: 'user.store.response',
+          correlationId: message.correlationId,
+          data: {
+            error: error.message
+          }
+        });
+      }
     }
   }
 }

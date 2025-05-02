@@ -50,7 +50,8 @@ class AuthService {
           name: userData.name,
           email: userData.email,
           password: userData.password,
-          role: userData.role
+          role: userData.role,
+          status: 'approved'
         });
       }
 

@@ -81,13 +81,25 @@ const MyOrders = () => {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'processing':
+    switch (status.toLowerCase()) {
+      case 'pending':
         return 'warning';
-      case 'shipped':
+      case 'stock_validating':
+        return 'warning';
+      case 'stock_validated': 
         return 'info';
+      case 'payment_pending':
+        return 'warning';
+      case 'payment_completed':
+        return 'info';
+      case 'completed':
+        return 'success';
+      case 'shipped':
+        return 'success';
       case 'delivered':
         return 'success';
+      case 'failed':
+        return 'error';
       case 'cancelled':
         return 'error';
       default:
@@ -163,15 +175,15 @@ const MyOrders = () => {
                   <TableCell>Date</TableCell>
                   <TableCell>Total Amount</TableCell>
                   <TableCell>Status</TableCell>
+                  <TableCell>Payment Method</TableCell>
                   <TableCell>Payment Status</TableCell>
-                  <TableCell>Payment Type</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {paginatedOrders.map((order) => (
                   <TableRow key={order._id}>
-                    <TableCell>{order._id}</TableCell>
+                    <TableCell>{order._id.substring(0, 8)}...</TableCell>
                     <TableCell>
                       {new Date(order.createdAt).toLocaleDateString()}
                     </TableCell>
@@ -184,13 +196,15 @@ const MyOrders = () => {
                       />
                     </TableCell>
                     <TableCell>
+                      {order.paymentMethod || 'Cash'}
+                    </TableCell>
+                    <TableCell>
                       <Chip
-                        label={order.paymentStatus}
-                        color={getPaymentStatusColor(order.paymentStatus)}
+                        label={order.payment?.status || 'pending'}
+                        color={getPaymentStatusColor(order.payment?.status || 'pending')}
                         size="small"
                       />
                     </TableCell>
-                    <TableCell>{order.paymentType}</TableCell>
                     <TableCell>
                       <Button
                         variant="outlined"
@@ -199,6 +213,20 @@ const MyOrders = () => {
                       >
                         View Details
                       </Button>
+                      
+                      {/* Add payment button if payment is pending and we have a payment URL */}
+                      {order.payment?.status === 'pending' && order.payment?.paymentUrl && (
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          href={order.payment.paymentUrl}
+                          target="_blank"
+                          sx={{ ml: 1 }}
+                        >
+                          Pay Now
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

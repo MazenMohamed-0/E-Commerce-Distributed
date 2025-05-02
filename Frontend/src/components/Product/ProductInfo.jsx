@@ -63,7 +63,7 @@ const ProductInfo = ({ product }) => {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography variant="subtitle1">Sold by:</Typography>
         <Typography variant="subtitle1" color="primary">
-          {product.createdBy?.storeName || 'Unknown Store'}
+          {product.seller?.storeName || 'Unknown Store'}
         </Typography>
       </Box>
 

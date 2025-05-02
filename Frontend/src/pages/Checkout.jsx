@@ -37,6 +37,9 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [orderPolling, setOrderPolling] = useState(null);
+  const [orderStatus, setOrderStatus] = useState(null);
+  const [pollingCount, setPollingCount] = useState(0);
 
   // Redirect to cart if cart is empty
   useEffect(() => {
@@ -51,6 +54,94 @@ const Checkout = () => {
       navigate('/login', { state: { from: '/checkout' } });
     }
   }, [user, token, navigate]);
+
+  // New function to generate idempotency key
+  const generateIdempotencyKey = () => {
+    // If we already have one in localStorage, use it for retries
+    const existingKey = localStorage.getItem('checkoutIdempotencyKey');
+    if (existingKey) return existingKey;
+    
+    // Otherwise generate a new one - simple implementation
+    const key = 'order-' + Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('checkoutIdempotencyKey', key);
+    return key;
+  };
+  
+  // New function to poll order status
+  const pollOrderStatus = async (orderId) => {
+    if (!orderId || !token) return;
+    
+    try {
+      const response = await axios.get(
+        `http://localhost:3004/orders/${orderId}/status`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+      
+      setOrderStatus(response.data);
+      
+      // Handle different status cases
+      switch(response.data.status) {
+        case 'payment_pending':
+          // Check if we have a payment URL in the payment object
+          if (response.data.paymentUrl || 
+             (response.data.payment && response.data.payment.paymentUrl)) {
+            // Store order info and redirect to PayPal
+            localStorage.setItem('pendingOrderId', orderId);
+            window.location.href = response.data.paymentUrl || response.data.payment.paymentUrl;
+            clearInterval(orderPolling);
+            return;
+          }
+          break;
+          
+        case 'completed':
+          // Success! Clear cart and redirect
+          setSuccess('Order completed successfully!');
+          clearCart();
+          clearInterval(orderPolling);
+          navigate('/orders/' + orderId);
+          return;
+          
+        case 'failed':
+          // Order failed
+          setError(response.data.message || 
+                  (response.data.error && response.data.error.message) || 
+                  'Order processing failed');
+          clearInterval(orderPolling);
+          return;
+          
+        default:
+          // Keep polling for other statuses
+          setPollingCount(prev => prev + 1);
+          
+          // Stop polling after 30 attempts (approximately 1 minute with 2s interval)
+          if (pollingCount > 30) {
+            clearInterval(orderPolling);
+            setError('Order processing is taking longer than expected. Please check order status page.');
+            navigate('/orders');
+          }
+      }
+    } catch (err) {
+      console.error('Error polling order status:', err);
+      setPollingCount(prev => prev + 1);
+      
+      // Stop polling after too many errors
+      if (pollingCount > 5) {
+        clearInterval(orderPolling);
+        setError('Error checking order status. Please check your orders page.');
+      }
+    }
+  };
+  
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (orderPolling) {
+        clearInterval(orderPolling);
+      }
+    };
+  }, [orderPolling]);
 
   const handleNext = () => {
     // Validate current step
@@ -81,53 +172,65 @@ const Checkout = () => {
         throw new Error('You must be logged in to place an order');
       }
 
-      console.log('Using token for order submission:', token ? 'Token exists' : 'No token');
+      // Generate idempotency key for this checkout session
+      const idempotencyKey = generateIdempotencyKey();
 
       // Prepare order data
       const orderData = {
         items: cartItems.map(item => ({
           productId: item.productId,
+          sellerId: item.sellerId, 
           quantity: item.quantity,
           price: item.price
         })),
-        totalAmount: getTotal(),
         shippingAddress,
-        paymentType,
-        paymentStatus: 'pending'
+        paymentMethod: paymentType
       };
 
       console.log('Submitting order with data:', orderData);
 
-      // Submit order to Order Service
+      // Submit order to Order Service with idempotency key
       const response = await axios.post(
         'http://localhost:3004/orders',
         orderData,
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Idempotency-Key': idempotencyKey
           }
         }
       );
 
-      console.log('Order creation successful:', response.data);
-
-      // Order successfully created
-      setSuccess('Order placed successfully! Thank you for your purchase.');
+      console.log('Order creation response:', response.data);
       
-      // Clear the cart locally - handle the async function properly
-      try {
-        await clearCart();
-        console.log('Cart cleared successfully');
-      } catch (cartError) {
-        console.error('Error clearing cart:', cartError);
-        // Don't fail the order if cart clearing fails
+      // Show initial status
+      setOrderStatus(response.data);
+      
+      // Start polling for order status updates
+      const orderId = response.data.orderId;
+      if (orderId) {
+        // Set up polling interval (every 2 seconds)
+        const interval = setInterval(() => pollOrderStatus(orderId), 2000);
+        setOrderPolling(interval);
+        
+        // Show processing status
+        setSuccess('Order created! Processing your order...');
+        
+        // Set activeStep to a new "processing" step
+        setActiveStep(steps.length); // This will show our custom processing step
+      } else {
+        throw new Error('No order ID received from server');
       }
-      
-      // Navigate to home page with success message
-      navigate('/', { state: { orderSuccess: 'Order placed successfully! Thank you for your purchase.' } });
     } catch (err) {
       console.error('Error creating order:', err);
+      // Check if this was a duplicate order (already exists with same idempotency key)
+      if (err.response?.status === 200 && err.response?.data?.order) {
+        setSuccess('Order already exists! Redirecting to order status...');
+        navigate(`/orders/${err.response.data.order._id}`);
+        return;
+      }
+      
       setError(err.response?.data?.message || 'Failed to create order. Please try again.');
     } finally {
       setLoading(false);
@@ -165,7 +268,7 @@ const Checkout = () => {
           onChange={(e) => setPaymentType(e.target.value)}
         >
           <FormControlLabel value="cash" control={<Radio />} label="Cash on Delivery" />
-          <FormControlLabel value="online payment" control={<Radio />} label="Online Payment" />
+          <FormControlLabel value="paypal" control={<Radio />} label="PayPal" />
         </RadioGroup>
       </FormControl>
     </Box>
@@ -206,8 +309,43 @@ const Checkout = () => {
         Payment Method
       </Typography>
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography>{paymentType === 'cash' ? 'Cash on Delivery' : 'Online Payment'}</Typography>
+        <Typography>{paymentType === 'cash' ? 'Cash on Delivery' : 'PayPal'}</Typography>
       </Paper>
+    </Box>
+  );
+
+  // Add a new render function for the processing step
+  const renderProcessingStep = () => (
+    <Box sx={{ mt: 4, textAlign: 'center' }}>
+      <Typography variant="h6" gutterBottom>
+        Processing Your Order
+      </Typography>
+      
+      {orderStatus ? (
+        <Alert severity={orderStatus.status === 'failed' ? 'error' : 'info'} sx={{ mb: 3 }}>
+          {orderStatus.message || `Status: ${orderStatus.status}`}
+        </Alert>
+      ) : (
+        <CircularProgress sx={{ my: 3 }} />
+      )}
+      
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+        Please wait while we process your order. This page will update automatically.
+      </Typography>
+      
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+      
+      <Button 
+        variant="outlined" 
+        onClick={() => navigate('/orders')}
+        sx={{ mt: 2 }}
+      >
+        View All Orders
+      </Button>
     </Box>
   );
 
@@ -219,6 +357,8 @@ const Checkout = () => {
         return renderPaymentForm();
       case 2:
         return renderOrderSummary();
+      case 3: // New processing step
+        return renderProcessingStep();
       default:
         return 'Unknown step';
     }

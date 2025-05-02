@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const productEventHandler = require('../events/productEventHandler');
 const winston = require('winston');
+const rabbitmq = require('../../shared/rabbitmq');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -102,26 +103,68 @@ class ProductService {
     }
 
   async getProductById(productId) {
-        try {
+    try {
       const product = await Product.findById(productId);
       if (!product) {
-                throw new Error('Product not found');
-            }
+        throw new Error('Product not found');
+      }
       return product;
-        } catch (error) {
+    } catch (error) {
       logger.error('Error getting product:', error);
       throw error;
-        }
     }
+  }
 
-  async getProductsBySeller(sellerId) {
-        try {
-      return await Product.find({ sellerId });
-        } catch (error) {
-      logger.error('Error getting seller products:', error);
+  async getProductDetailsWithSeller(productId) {
+    try {
+      const product = await this.getProductById(productId);
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      // Generate a unique correlation ID for this request
+      const correlationId = `seller-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Create a promise to handle the response
+      return new Promise((resolve, reject) => {
+        // Create a temporary response queue
+        rabbitmq.createTemporaryResponseQueue('user-events', correlationId, async (message) => {
+          try {
+            if (message.data.error) {
+              reject(new Error(message.data.error));
+              return;
+            }
+
+            // Combine product data with seller information
+            const productWithSeller = {
+              ...product.toObject(),
+              seller: {
+                storeName: message.data.storeName,
+                sellerId: product.createdBy
+              }
+            };
+
+            resolve(productWithSeller);
+          } catch (error) {
+            reject(error);
+          }
+        }).then(() => {
+          // Send request for seller information
+          rabbitmq.publish('user-events', 'user.store.request', {
+            type: 'user.store.request',
+            correlationId: correlationId,
+            data: {
+              userId: product.createdBy,
+              correlationId: correlationId
+            }
+          });
+        }).catch(reject);
+      });
+    } catch (error) {
+      logger.error('Error getting product details with seller:', error);
       throw error;
-        }
     }
+  }
 
   async getProductsByCategory(category) {
         try {
@@ -145,6 +188,15 @@ class ProductService {
       throw error;
         }
     }
+
+  async getProductsBySeller(sellerId) {
+    try {
+      return await Product.find({ createdBy: sellerId });
+    } catch (error) {
+      logger.error('Error getting seller products:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new ProductService();

@@ -267,7 +267,8 @@ router.post('/update-role', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 oauthProvider: user.oauthProvider,
-                oauthId: user.oauthId
+                oauthId: user.oauthId,
+                status: 'approved'
             });
         }
 

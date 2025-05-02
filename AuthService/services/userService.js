@@ -89,18 +89,11 @@ class UserService {
     if (isAdmin) {
       console.log('Admin update with data:', updates);
       
-      // Handle basic fields
-      if (updates.name) user.name = updates.name;
-      if (updates.email) user.email = updates.email;
-      if (updates.password) user.password = updates.password;
-      
-      // Role changes are not allowed through the edit form
-      // We keep the existing role
-      
       // Handle status - this is what was missing
       if (updates.status) {
         user.status = updates.status;
       }
+      console.log(user);
       
       // Handle seller-specific fields
       if (user.role === 'seller') {

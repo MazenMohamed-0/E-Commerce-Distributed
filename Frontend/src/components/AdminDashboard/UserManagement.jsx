@@ -152,7 +152,7 @@ const UserManagement = () => {
       setError(null);
       setSuccessMessage(null);
       
-      const response = await fetch(`${config.BACKEND_URL}/users/admin/${currentUser._id}`, {
+      const response = await fetch(`${config.BACKEND_URL}/users/admin/update-status/${currentUser._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -341,6 +341,7 @@ const UserManagement = () => {
               value={editedUser.name}
               onChange={handleInputChange}
               fullWidth
+              disabled
             />
             <TextField
               label="Email"

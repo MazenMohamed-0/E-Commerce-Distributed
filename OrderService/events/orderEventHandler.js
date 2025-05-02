@@ -26,6 +26,14 @@ class OrderEventHandler {
       // Subscribe to user events
       await rabbitmq.subscribe('user-events', 'order-service-user-queue', 'user.#', this.handleUserEvent.bind(this));
 
+      // Add subscription for payment status updates
+      await rabbitmq.subscribe(
+        'payment-events', 
+        'order-service-payment-status-queue', 
+        'payment.status', 
+        this.handlePaymentStatusUpdate.bind(this)
+      );
+
       logger.info('Order service event handlers initialized');
     } catch (error) {
       logger.error('Error initializing event handlers:', error);
@@ -85,6 +93,80 @@ class OrderEventHandler {
     } catch (error) {
       logger.error('Error handling user event:', error);
       throw error;
+    }
+  }
+
+  async handlePaymentStatusUpdate(event) {
+    try {
+      const { orderId, paymentId, status, paymentUrl, error, timestamp } = event.data;
+      
+      logger.info('Received payment status update', { orderId, paymentId, status });
+      
+      if (!orderId) {
+        logger.error('Payment status update missing orderId', { event });
+        return;
+      }
+      
+      // Get the order
+      const order = await Order.findById(orderId);
+      if (!order) {
+        logger.error('Order not found for payment status update', { orderId });
+        return;
+      }
+      
+      // Create payment data object from event
+      const paymentData = {
+        status,
+        paymentId,
+        paypalPaymentId: paymentId,
+        updatedAt: timestamp ? new Date(timestamp) : new Date(),
+        error
+      };
+      
+      // If we have a payment URL, add it
+      if (paymentUrl) {
+        paymentData.paymentUrl = paymentUrl;
+      }
+      
+      // Update the order with payment info
+      order.updatePaymentInfo(paymentData);
+      
+      // For completed payments, update order status
+      if (status === 'completed' && order.status === 'payment_pending') {
+        order.status = 'payment_completed';
+        
+        // If all other steps are complete, mark order as completed
+        if (order.status === 'payment_completed') {
+          // Additional checks could be done here
+          order.status = 'completed';
+        }
+      } else if (status === 'failed') {
+        // Failed payments should cause the order to fail
+        order.status = 'failed';
+        order.error = {
+          message: error || 'Payment failed',
+          step: 'payment',
+          timestamp: new Date()
+        };
+      }
+      
+      await order.save();
+      
+      // Publish appropriate order event based on new status
+      if (order.status === 'completed') {
+        await this.publishOrderEvent(eventTypes.ORDER_COMPLETED, {
+          orderId: order._id,
+          userId: order.userId
+        });
+      } else if (order.status === 'failed') {
+        await this.publishOrderEvent(eventTypes.ORDER_FAILED, {
+          orderId: order._id,
+          userId: order.userId,
+          reason: error || 'Payment failed'
+        });
+      }
+    } catch (error) {
+      logger.error('Error handling payment status update', { error: error.message });
     }
   }
 

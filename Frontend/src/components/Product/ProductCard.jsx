@@ -63,9 +63,6 @@ const ProductCard = ({ product }) => {
           />
           <Chip label={product.category} size="small" />
         </Box>
-        <Typography variant="body2" color="text.secondary">
-          Sold by: {product.createdBy?.storeName || 'Unknown Store'}
-        </Typography>
       </CardContent>
       <CardActions>
         <Button

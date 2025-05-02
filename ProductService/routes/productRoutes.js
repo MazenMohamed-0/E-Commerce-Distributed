@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const productService = require('../services/productService');
-const { verifyToken, isAuthorized } = require('../middleware/authMiddleware');
+const { verifyToken, isAuthorized, isSeller } = require('../middleware/authMiddleware');
 
 // Public routes (no authentication required)
 router.get('/', async (req, res) => {
@@ -15,18 +15,17 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
     try {
-        const product = await productService.getProductById(req.params.id);
+        const product = await productService.getProductDetailsWithSeller(req.params.id);
         res.json(product);
     } catch (error) {
         res.status(404).json({ message: error.message });
     }
 });
 
-// Protected routes (require authentication)
 router.use(verifyToken);
 
-// Get products by seller (must be placed before /:id route)
-router.get('/seller', async (req, res) => {
+// Get seller's products
+router.get('/seller/products', isSeller, async (req, res) => {
     try {
         const products = await productService.getProductsBySeller(req.user.userId);
         res.json(products);

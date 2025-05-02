@@ -26,4 +26,12 @@ const isAuthorized = (req, res, next) => {
     }
 };
 
-module.exports = { verifyToken, isAuthorized }; 
+// Middleware to check if user is specifically a seller
+const isSeller = (req, res, next) => {
+    if (req.user.role === 'seller') {
+        return next();
+    }
+    return res.status(403).json({ message: 'Forbidden: Only sellers can access this resource' });
+};
+
+module.exports = { verifyToken, isAuthorized, isSeller }; 
