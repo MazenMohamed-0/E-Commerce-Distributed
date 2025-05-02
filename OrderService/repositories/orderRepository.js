@@ -73,12 +73,12 @@ class OrderRepository {
 
   /**
    * Find orders for products created by a specific seller
-   * @param {Array} productIds - Array of product IDs created by the seller
+   * @param {String} sellerId - Seller ID
    * @returns {Promise<Array>} - Array of order objects
    */
-  async findOrdersForProducts(productIds) {
+  async findOrdersForProducts(sellerId) {
     return await Order.find({
-      'items.productId': { $in: productIds }
+      'items.sellerId': sellerId
     });
   }
 

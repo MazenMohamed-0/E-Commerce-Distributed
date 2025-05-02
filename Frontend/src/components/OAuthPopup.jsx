@@ -6,19 +6,38 @@ const OAuthPopup = () => {
 
   useEffect(() => {
     // Listen for messages from the popup
-    const handleMessage = (event) => {
+    const handleMessage = async (event) => {
       // Verify the origin of the message
       if (event.origin !== window.location.origin) return;
       
       if (event.data.type === 'OAUTH_TOKEN') {
         const { token } = event.data;
-        console.log('Received OAuth token from popup:', token);
+        console.log('Received OAuth token from popup');
         
-        // Save token to localStorage
-        localStorage.setItem('token', token);
-        
-        // Close the popup
-        window.close();
+        try {
+          // Validate token structure
+          if (!token || typeof token !== 'string') {
+            throw new Error('Invalid token format received');
+          }
+
+          // Save token to localStorage
+          localStorage.setItem('token', token);
+          console.log('Token saved successfully');
+          
+          // Post a success message back to the opener
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_SUCCESS', token }, window.location.origin);
+          }
+          
+          // Close the popup
+          window.close();
+        } catch (error) {
+          console.error('Error handling OAuth token:', error);
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_ERROR', error: error.message }, window.location.origin);
+          }
+          window.close();
+        }
       }
     };
 

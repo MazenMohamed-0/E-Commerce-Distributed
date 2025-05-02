@@ -231,7 +231,7 @@ export const Login = () => {
           alignItems: 'center',
         }}
       >
-        <Typography component="h1" variant="h5">
+        <Typography component="h1" variant="h5" sx={{ mb: 3 }}>
           Sign In
         </Typography>
         
@@ -258,19 +258,19 @@ export const Login = () => {
             severity="error" 
             sx={{ 
               width: '100%', 
-              mt: 2,
               mb: 2,
               '& .MuiAlert-message': {
                 width: '100%',
                 textAlign: 'left'
               }
             }}
+            onClose={() => setErrorMessage('')}
           >
             {errorMessage}
           </Alert>
         )}
 
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1, width: '100%' }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
           <TextField
             margin="normal"
             required
@@ -300,26 +300,60 @@ export const Login = () => {
             fullWidth
             variant="contained"
             sx={{ mt: 3, mb: 2 }}
+            disabled={loading}
           >
-            Sign In
+            {loading ? 'Signing in...' : 'Sign In'}
           </Button>
+
+          <Box sx={{ mt: 2, mb: 2 }}>
+            <Divider>
+              <Typography variant="body2" color="text.secondary">
+                OR
+              </Typography>
+            </Divider>
+          </Box>
+
           <Button
             fullWidth
             variant="outlined"
+            startIcon={<GoogleIcon />}
             onClick={handleGoogleLogin}
             sx={{ mb: 2 }}
-            startIcon={<GoogleIcon />}
           >
             Sign in with Google
           </Button>
+
           <Button
             fullWidth
             variant="outlined"
-            onClick={handleFacebookLogin}
             startIcon={<FacebookIcon />}
+            onClick={handleFacebookLogin}
+            sx={{ mb: 3 }}
           >
             Sign in with Facebook
           </Button>
+
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            alignItems: 'center',
+            mt: 2,
+            pt: 2,
+            borderTop: '1px solid #eee'
+          }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Don't have an account?
+            </Typography>
+            <Button
+              component={Link}
+              to="/register"
+              variant="contained"
+              color="secondary"
+              fullWidth
+            >
+              Create Account
+            </Button>
+          </Box>
         </Box>
       </Box>
     </Container>

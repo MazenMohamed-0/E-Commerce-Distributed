@@ -24,10 +24,13 @@ class ProductRepository {
   
   /**
    * Create a new product
-   * @param {Object} productData - Product data
+   * @param {Object} productData - Product data with createdBy field
    * @returns {Promise<Object>} - Created product object
    */
   async create(productData) {
+    if (!productData.createdBy) {
+      throw new Error('Seller ID (createdBy) is required');
+    }
     const product = new Product(productData);
     return await product.save();
   }
@@ -35,24 +38,24 @@ class ProductRepository {
   /**
    * Update a product
    * @param {String} id - Product ID
-   * @param {Object} productData - Product data to update
+   * @param {Object} updateData - Update data
    * @returns {Promise<Object>} - Updated product object
    */
-  async update(id, productData) {
-    const product = await Product.findById(id);
-    if (!product) return null;
-    
-    Object.assign(product, productData);
-    return await product.save();
+  async update(id, updateData) {
+    // Don't allow updating createdBy field
+    if (updateData.createdBy) {
+      delete updateData.createdBy;
+    }
+    return await Product.findByIdAndUpdate(id, updateData, { new: true });
   }
   
   /**
    * Delete a product
    * @param {String} id - Product ID
-   * @returns {Promise<Object>} - Deletion result
+   * @returns {Promise<Object>} - Deleted product object
    */
   async delete(id) {
-    return await Product.deleteOne({ _id: id });
+    return await Product.findByIdAndDelete(id);
   }
   
   /**
@@ -86,58 +89,6 @@ class ProductRepository {
    */
   async findByCategory(category) {
     return await Product.find({ category });
-  }
-
-  /**
-   * Create a new product
-   * @param {Object} productData - Product data
-   * @returns {Promise<Object>} - Created product object
-   */
-  async create(productData) {
-    const product = new Product(productData);
-    return await product.save();
-  }
-
-  /**
-   * Update a product
-   * @param {String} id - Product ID
-   * @param {Object} updates - Update data
-   * @returns {Promise<Object>} - Updated product object
-   */
-  async update(id, updates) {
-    const product = await Product.findById(id);
-    if (!product) return null;
-    
-    Object.keys(updates).forEach(key => {
-      product[key] = updates[key];
-    });
-    
-    product.updatedAt = Date.now();
-    return await product.save();
-  }
-
-  /**
-   * Delete a product
-   * @param {String} id - Product ID
-   * @returns {Promise<Object>} - Deletion result
-   */
-  async delete(id) {
-    return await Product.deleteOne({ _id: id });
-  }
-
-  /**
-   * Update product stock
-   * @param {String} id - Product ID
-   * @param {Number} quantity - Quantity to reduce from stock
-   * @returns {Promise<Object>} - Updated product object
-   */
-  async updateStock(id, quantity) {
-    const product = await Product.findById(id);
-    if (!product) return null;
-    
-    product.stock = Math.max(0, product.stock - quantity);
-    product.updatedAt = Date.now();
-    return await product.save();
   }
 
   /**

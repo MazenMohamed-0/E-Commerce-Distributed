@@ -11,12 +11,10 @@ const Buyer = require('../models/Buyer');
 // Public routes
 router.post('/register', async (req, res) => {
     try {
-        console.log('Register request received:', req.body);
         const { name, email, password, role, storeInfo } = req.body;
         
         // Validate required fields
         if (!name || !email || !password || !role) {
-            console.log('Missing required fields:', { name, email, password, role });
             return res.status(400).json({ message: 'All fields are required' });
         }
 
@@ -30,15 +28,8 @@ router.post('/register', async (req, res) => {
         }
 
         const result = await authService.register(req.body);
-        console.log('Registration successful:', {
-            user: result.user,
-            hasToken: !!result.token
-        });
-
-        // Return JSON response for manual registration
         res.status(201).json(result);
     } catch (error) {
-        console.error('Registration error:', error);
         res.status(400).json({ message: error.message || 'Registration failed' });
     }
 });
@@ -46,90 +37,11 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        console.log('Login attempt for email:', email);
         
-        // Find user
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(401).json({ 
-                status: 'error',
-                message: 'The email or password you entered is incorrect. Please try again.' 
-            });
-        }
-
-        // Verify password first
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(401).json({ 
-                status: 'error',
-                message: 'The email or password you entered is incorrect. Please try again.' 
-            });
-        }
-
-        // Check if user is a pending seller
-        if (user.role === 'seller' && user.status === 'pending') {
-            return res.status(403).json({ 
-                status: 'error',
-                message: 'Your seller account is awaiting approval. Our team will review your application within 24-48 hours. You will receive an email notification once approved.',
-                pendingSeller: true,
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    status: user.status,
-                    storeName: user.storeName,
-                    taxNumber: user.taxNumber,
-                    storeDescription: user.storeDescription,
-                    contactNumber: user.contactNumber
-                }
-            });
-        }
-
-        // Check if user is a rejected seller
-        if (user.role === 'seller' && user.status === 'rejected') {
-            return res.status(403).json({ 
-                status: 'error',
-                message: 'Your seller account application has been declined. Please contact our support team for more information at support@example.com.' 
-            });
-        }
-
-        // Check if user is a suspended seller
-        if (user.role === 'seller' && user.status === 'suspended') {
-            return res.status(403).json({ 
-                status: 'error',
-                message: 'Your seller account has been temporarily suspended. Please contact our support team at support@example.com for assistance.' 
-            });
-        }
-
-        // Generate token
-        const token = authService.generateToken(user);
-        
-        // Send JSON response for successful login
-        res.json({
-            status: 'success',
-            message: 'Login successful',
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                status: user.status,
-                ...(user.role === 'seller' && {
-                    storeName: user.storeName,
-                    taxNumber: user.taxNumber,
-                    storeDescription: user.storeDescription,
-                    contactNumber: user.contactNumber
-                })
-            },
-            token
-        });
+        const result = await authService.login(email, password);
+        res.json(result);
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ 
-            status: 'error',
-            message: 'An unexpected error occurred. Please try again later. If the problem persists, contact support.' 
-        });
+        res.status(401).json({ message: error.message || 'Login failed' });
     }
 });
 
@@ -193,36 +105,15 @@ router.get('/google/callback',
     passport.authenticate('google', { failureRedirect: 'http://localhost:5173/login' }),
     async (req, res) => {
         try {
-            console.log('Google OAuth callback received:', req.user);
-            
-            // Check if user is a pending seller
-            if (req.user.role === 'seller' && req.user.status === 'pending') {
-                return res.send(`
-                    <html>
-                    <script>
-                        window.opener.postMessage({
-                            error: 'Your seller account is pending approval. Please wait for admin verification.'
-                        }, 'http://localhost:5173');
-                        window.close();
-                    </script>
-                    </html>
-                `);
-            }
-
             const token = authService.generateToken(req.user);
             
-            // Send token through postMessage and close window
             res.send(`
                 <html>
                 <script>
-                    try {
-                        window.opener.postMessage({
-                            token: '${token}',
-                            error: null
-                        }, 'http://localhost:5173');
-                    } catch (e) {
-                        console.error('PostMessage error:', e);
-                    }
+                    window.opener.postMessage({
+                        token: '${token}',
+                        error: null
+                    }, 'http://localhost:5173');
                     window.close();
                 </script>
                 <body>
@@ -231,7 +122,6 @@ router.get('/google/callback',
                 </html>
             `);
         } catch (error) {
-            console.error('Google OAuth callback error:', error);
             res.send(`
                 <html>
                 <script>
@@ -287,37 +177,39 @@ router.get('/facebook/callback',
     }
 );
 
-// Protected routes
-router.get('/profile', verifyToken, async (req, res) => {
+// Token verification endpoint
+router.get('/verify-token', verifyToken, (req, res) => {
     try {
-        const user = await User.findById(req.user.userId).select('-password');
-        console.log(user);
+        // If verifyToken middleware passed, token is valid
+        res.json({ 
+            valid: true,
+            userId: req.user.userId
+        });
+    } catch (error) {
+        res.status(401).json({ 
+            valid: false,
+            message: error.message || 'Token verification failed'
+        });
+    }
+});
+
+// Protected routes
+router.use(verifyToken);
+
+// Get user profile
+router.get('/profile', async (req, res) => {
+    try {
+        const user = await authService.getUserProfile(req.user.userId);
         res.json(user);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(404).json({ message: error.message });
     }
 });
 
-// Admin routes
-router.get('/users', verifyToken, isAdmin, async (req, res) => {
+// Update user profile
+router.put('/profile', async (req, res) => {
     try {
-        const users = await User.find().select('-password');
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-router.patch('/users/:userId/role', verifyToken, isAdmin, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const { role } = req.body;
-        
-        if (!['admin', 'buyer', 'seller'].includes(role)) {
-            return res.status(400).json({ message: 'Invalid role' });
-        }
-
-        const updatedUser = await authService.changeUserRole(userId, role);
+        const updatedUser = await authService.updateUserProfile(req.user.userId, req.body);
         res.json(updatedUser);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -329,33 +221,11 @@ router.post('/update-role', async (req, res) => {
     try {
         console.log('Update role request received:', req.body);
         const { role, storeName, taxNumber, storeDescription, contactNumber } = req.body;
-        const token = req.headers.authorization?.split(' ')[1];
-
-        if (!token) {
-            console.log('No token provided');
-            return res.status(401).json({ error: 'No token provided' });
-        }
+        const userId = req.user.userId; // Get userId from verified token
 
         if (!role) {
             console.log('No role provided');
             return res.status(400).json({ error: 'Role is required' });
-        }
-
-        // Verify token and get user ID
-        let decoded;
-        try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET);
-            console.log('Token verified, decoded:', decoded);
-        } catch (err) {
-            console.log('Token verification failed:', err);
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-
-        const userId = decoded.userId;
-
-        if (!userId) {
-            console.log('No userId in token');
-            return res.status(401).json({ error: 'Invalid token: No userId' });
         }
 
         // Find user
@@ -442,6 +312,30 @@ router.post('/update-role', async (req, res) => {
     } catch (error) {
         console.error('Role update error:', error);
         return res.status(500).json({ error: 'Failed to update role' });
+    }
+});
+
+// Admin routes
+router.use(isAdmin);
+
+// Get all users
+router.get('/users', async (req, res) => {
+    try {
+        const users = await authService.getAllUsers();
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Update user status (admin only)
+router.patch('/users/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const updatedUser = await authService.updateUserStatus(req.params.id, status);
+        res.json(updatedUser);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
     }
 });
 

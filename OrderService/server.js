@@ -10,7 +10,7 @@ app.use(express.json());
 app.use('/orders', orderRoutes);
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect('mongodb+srv://ramezfathi:RQVKiyEfmY69IG7D@cluster0.kamuf9s.mongodb.net/order?retryWrites=true&w=majority&appName=DistributedSystemsUserAuth', { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Order Service: Connected to MongoDB'))
   .catch((err) => console.error('Order Service: MongoDB connection error:', err));
 

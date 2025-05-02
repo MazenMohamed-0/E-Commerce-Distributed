@@ -15,7 +15,7 @@ console.log('Product Service: JWT Secret:', process.env.JWT_SECRET);
 
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect('mongodb+srv://ramezfathi:RQVKiyEfmY69IG7D@cluster0.kamuf9s.mongodb.net/product?retryWrites=true&w=majority', { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Product Service: Connected to MongoDB'))
   .catch((err) => console.error('Product Service: MongoDB connection error:', err));
 

@@ -1,6 +1,16 @@
 const orderRepository = require('../repositories/orderRepository');
-const axios = require('axios');
-const emailService = require('./emailService');
+const Order = require('../models/Order');
+const orderEventHandler = require('../events/orderEventHandler');
+const winston = require('winston');
+const rabbitmq = require('../../shared/rabbitmq');
+
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    transports: [
+        new winston.transports.File({ filename: 'order-service.log' })
+    ]
+});
 
 class OrderService {
     async getAllOrders() {
@@ -19,48 +29,79 @@ class OrderService {
         }
     }
 
-    async getOrderById(id, token) {
+    async getOrderById(id) {
         try {
             const order = await orderRepository.findById(id);
             if (!order) {
                 throw new Error('Order not found');
             }
 
-            // Get product details for each item in the order
-            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
             const orderWithProducts = { ...order.toObject() };
 
-            // Prepare authorization header if token is provided
-            const headers = {};
-            if (token) {
-                headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-            }
-
-            // Fetch product details for each item
+            // Fetch product details for each item using RabbitMQ
             const productPromises = order.items.map(async (item) => {
-                // Convert Mongoose subdocument to plain object
                 const plainItem = item.toObject ? item.toObject() : item;
                 try {
-                    const response = await axios.get(
-                        `${productServiceUrl}/products/${plainItem.productId}`,
-                        {
-                            headers,
-                            timeout: 5000 // 5 second timeout
+                    // Create a unique correlation ID for this request
+                    const correlationId = `product-details-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    
+                    // Create a promise that will be resolved when we receive the response
+                    const responsePromise = new Promise(async (resolve, reject) => {
+                        const timeoutId = setTimeout(() => {
+                            reject(new Error('Product details request timed out'));
+                        }, 5000); // 5 second timeout
+
+                        // Create a temporary response queue
+                        const queueName = await rabbitmq.createTemporaryResponseQueue(
+                            'product-events',
+                            correlationId,
+                            (message) => {
+                                clearTimeout(timeoutId);
+                                if (message.data.error) {
+                                    reject(new Error(message.data.error));
+                                } else {
+                                    resolve(message.data);
+                                }
+                            }
+                        );
+
+                        try {
+                            // Publish the product details request
+                            await rabbitmq.publish('product-events', 'product.details.request', {
+                                type: 'product.details.request',
+                                correlationId,
+                                data: {
+                                    productId: plainItem.productId,
+                                    replyTo: `response.${correlationId}`
+                                }
+                            });
+                        } catch (error) {
+                            clearTimeout(timeoutId);
+                            reject(error);
+                        } finally {
+                            // Cleanup function to be called after resolution or rejection
+                            setTimeout(async () => {
+                                try {
+                                    await rabbitmq.unsubscribe(queueName);
+                                } catch (error) {
+                                    console.error('Error cleaning up temporary queue:', error);
+                                }
+                            }, 1000); // Give a second for the message to be processed
                         }
-                    );
+                    });
+
+                    // Wait for the response
+                    const productDetails = await responsePromise;
                     return {
                         ...plainItem,
-                        productDetails: response.data
+                        productDetails
                     };
                 } catch (error) {
                     console.error(`Error fetching product ${plainItem.productId}:`, error.message);
-                    if (error.response) {
-                        console.error('Status:', error.response.status);
-                        console.error('Data:', error.response.data);
-                    }
                     return {
                         ...plainItem,
-                        productDetails: null
+                        productDetails: null,
+                        error: error.message
                     };
                 }
             });
@@ -75,134 +116,302 @@ class OrderService {
         }
     }
 
-    async createOrder(orderData) {
+    async createOrder(userId, cartData) {
         try {
-            // Validate order data
-            if (!orderData.items || orderData.items.length === 0) {
-                throw new Error('Order must contain at least one item');
+            // Validate products first
+            if (!cartData.items || !Array.isArray(cartData.items)) {
+                throw new Error('Invalid order data: items array is required');
             }
             
-            // Get the authentication token from the headers
-            const token = orderData.token;
-            if (!token) {
-                throw new Error('Authentication token is required');
+            // Format items for validation
+            const itemsForValidation = cartData.items.map(item => ({
+                productId: item.productId,
+                quantity: item.quantity
+            }));
+
+            console.log('Requesting product validation for items:', itemsForValidation);
+
+            const validationResult = await orderEventHandler.requestProductValidation(itemsForValidation);
+            
+            if (!validationResult || !validationResult.validationResults) {
+                throw new Error('Invalid validation response received from product service');
             }
-            
-            // Ensure token is in the correct format
-            const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-            
-            // Verify product availability in Product Service
-            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
-            
-            // Check each product's availability
-            for (const item of orderData.items) {
-                try {
-                    // Get current product details
-                    const productResponse = await axios.get(
-                        `${productServiceUrl}/products/${item.productId}`,
-                        {
-                            headers: {
-                                Authorization: authHeader
-                            },
-                            timeout: 5000
-                        }
-                    );
-                    
-                    const product = productResponse.data;
-                    
-                    // Check if enough stock is available
-                    if (product.stock < item.quantity) {
-                        throw new Error(`Not enough stock available for product: ${product.name}`);
-                    }
-                    
-                    // Instead of updating the stock directly (which requires seller/admin permission),
-                    // use a dedicated stock update endpoint that's designed for order processing
-                    await axios.post(
-                        `${productServiceUrl}/products/${item.productId}/reduce-stock`,
-                        { 
-                            quantity: item.quantity,
-                            orderId: orderData.orderId || 'pending' // Include order reference
-                        },
-                        {
-                            headers: {
-                                Authorization: authHeader,
-                                'X-Service-Type': 'order-service' // Identify this as a service-to-service call
-                            },
-                            timeout: 5000
-                        }
-                    );
-                    
-                    // Stock reduction request successful
-                    
-                } catch (error) {
-                    console.error('Error processing product:', error.message);
-                    if (error.response) {
-                        console.error('Status:', error.response.status);
-                        console.error('Data:', error.response.data);
-                    }
-                    throw new Error(`Failed to process product ${item.productId}: ${error.message}`);
-                }
+
+            if (!validationResult.isValid) {
+                // Get details of invalid products
+                const invalidProducts = validationResult.validationResults
+                    .filter(result => !result.isValid || !result.hasStock)
+                    .map(result => ({
+                        productId: result.productId,
+                        reason: !result.isValid ? 'Product not found' : 'Insufficient stock',
+                        currentStock: result.currentStock,
+                        requestedQuantity: cartData.items.find(item => item.productId === result.productId)?.quantity || 0
+                    }));
+
+                const errorMessage = `Order validation failed: ${validationResult.message}\n` +
+                    `Invalid products:\n${invalidProducts.map(p => 
+                        `- Product ${p.productId}: ${p.reason}. ` +
+                        `Available stock: ${p.currentStock}, Requested: ${p.requestedQuantity}`
+                    ).join('\n')}`;
+
+                throw new Error(errorMessage);
             }
-            
-            // Remove the token from the order data before saving
-            const { token: _, ...orderDataToSave } = orderData;
-            
-            // Create the order using the repository
-            const savedOrder = await orderRepository.create(orderDataToSave);
-            
-            // Clear the user's cart
-            try {
-                const cartServiceUrl = process.env.CART_SERVICE_URL || 'http://localhost:3003';
-                await axios.delete(
-                    `${cartServiceUrl}/cart`,
-                    {
-                        headers: {
-                            Authorization: authHeader
-                        },
-                        timeout: 5000
-                    }
-                );
-                // Cart cleared successfully
-            } catch (cartError) {
-                // Don't fail the order if cart clearing fails
-                console.error('Error clearing user cart:', cartError.message);
-            }
-            
-            // Get user email from Auth Service
-            try {
-                const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
-                const userResponse = await axios.get(
-                    `${authServiceUrl}/users/${orderData.userId}`,
-                    {
-                        headers: {
-                            Authorization: authHeader
-                        },
-                        timeout: 5000
-                    }
-                );
+
+            // Update cart items with current prices and seller IDs from validation results
+            const updatedItems = cartData.items.map(item => {
+                const validationItem = validationResult.validationResults
+                    .find(v => v.productId === item.productId);
                 
-                if (userResponse.data && userResponse.data.email) {
-                    // Send order confirmation email
-                    const emailResult = await emailService.sendOrderConfirmation(
-                        savedOrder, 
-                        userResponse.data.email
-                    );
-                    
-                    if (!emailResult.success) {
-                        console.error('Failed to send order confirmation email:', emailResult.error);
-                    }
-                } else {
-                    console.error('User email not found in Auth Service response');
+                if (!validationItem.productDetails) {
+                    throw new Error(`Product details not found for product: ${item.productId}`);
                 }
-            } catch (emailError) {
-                // Don't fail the order if email sending fails
-                console.error('Error sending order confirmation email:', emailError.message);
-            }
-            
-            return savedOrder;
+
+                return {
+                    productId: item.productId,
+                    sellerId: validationItem.productDetails.sellerId,
+                    quantity: item.quantity,
+                    price: validationItem.productDetails.price,
+                    currentStock: validationItem.currentStock,
+                    previousStock: validationItem.previousStock
+                };
+            });
+
+            // Calculate total amount using validated prices
+            const totalAmount = updatedItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+
+            // Create order in processing state
+            const order = new Order({
+                userId,
+                items: updatedItems,
+                totalAmount,
+                status: 'processing',
+                paymentStatus: 'pending',
+                shippingAddress: cartData.shippingAddress,
+                paymentType: cartData.paymentType || 'cash'
+            });
+
+            await order.save();
+                
+            // Publish ORDER_CREATED event to start the SAGA
+            await orderEventHandler.publishOrderEvent('ORDER_CREATED', {
+                orderId: order._id,
+                userId,
+                items: updatedItems
+            });
+
+            logger.info(`Order created: ${order._id}`);
+            return order;
         } catch (error) {
-            console.error('Error creating order:', error);
-            throw new Error('Error creating order: ' + error.message);
+            logger.error('Error creating order:', error);
+            throw error;
+        }
+    }
+
+    async processOrder(orderId) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update order status to PROCESSING
+            order.status = 'PROCESSING';
+            await order.save();
+
+            // Publish ORDER_PROCESSING event
+            await orderEventHandler.publishOrderEvent('ORDER_PROCESSING', {
+                orderId,
+                items: order.items
+            });
+
+            logger.info(`Order processing started: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error processing order:', error);
+            throw error;
+        }
+    }
+
+    async completeOrder(orderId) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update order status to COMPLETED
+            order.status = 'COMPLETED';
+            order.paymentStatus = 'PAID';
+            await order.save();
+
+            // Publish ORDER_COMPLETED event
+            await orderEventHandler.publishOrderEvent('ORDER_COMPLETED', {
+                orderId,
+                userId: order.userId,
+                items: order.items
+            });
+
+            logger.info(`Order completed: ${orderId}`);
+            return order;
+                } catch (error) {
+            logger.error('Error completing order:', error);
+            throw error;
+        }
+    }
+
+    async cancelOrder(orderId, reason) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update order status to CANCELLED
+            order.status = 'CANCELLED';
+            order.cancellationReason = reason;
+            await order.save();
+
+            // Publish ORDER_CANCELLED event
+            await orderEventHandler.publishOrderEvent('ORDER_CANCELLED', {
+                orderId,
+                userId: order.userId,
+                items: order.items,
+                reason
+            });
+
+            logger.info(`Order cancelled: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error cancelling order:', error);
+            throw error;
+        }
+    }
+
+    async getOrder(orderId) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+            return order;
+        } catch (error) {
+            logger.error('Error getting order:', error);
+            throw error;
+        }
+    }
+
+    async getUserOrders(userId) {
+        try {
+            return await Order.find({ userId }).sort({ createdAt: -1 });
+        } catch (error) {
+            logger.error('Error getting user orders:', error);
+            throw error;
+        }
+    }
+
+    async handleStockReserved(orderId) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update order status to STOCK_RESERVED
+            order.status = 'STOCK_RESERVED';
+            await order.save();
+
+            // Publish PAYMENT_REQUESTED event
+            await orderEventHandler.publishOrderEvent('PAYMENT_REQUESTED', {
+                orderId,
+                userId: order.userId,
+                amount: order.totalAmount
+            });
+
+            logger.info(`Stock reserved for order: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error handling stock reservation:', error);
+            throw error;
+        }
+    }
+
+    async handleStockReservationFailed(orderId, reason) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update order status to FAILED
+            order.status = 'FAILED';
+            order.failureReason = reason;
+            await order.save();
+
+            // Publish ORDER_FAILED event
+            await orderEventHandler.publishOrderEvent('ORDER_FAILED', {
+                orderId,
+                userId: order.userId,
+                reason
+            });
+
+            logger.info(`Stock reservation failed for order: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error handling stock reservation failure:', error);
+            throw error;
+        }
+    }
+
+    async handlePaymentCompleted(orderId) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update payment status
+            order.paymentStatus = 'PAID';
+            await order.save();
+
+            // Publish ORDER_CONFIRMED event
+            await orderEventHandler.publishOrderEvent('ORDER_CONFIRMED', {
+                orderId,
+                userId: order.userId,
+                items: order.items
+            });
+
+            logger.info(`Payment completed for order: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error handling payment completion:', error);
+            throw error;
+        }
+    }
+
+    async handlePaymentFailed(orderId, reason) {
+        try {
+            const order = await Order.findById(orderId);
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            // Update payment status
+            order.paymentStatus = 'FAILED';
+            order.failureReason = reason;
+            await order.save();
+
+            // Publish ORDER_FAILED event
+            await orderEventHandler.publishOrderEvent('ORDER_FAILED', {
+                orderId,
+                userId: order.userId,
+                reason
+            });
+
+            logger.info(`Payment failed for order: ${orderId}`);
+            return order;
+        } catch (error) {
+            logger.error('Error handling payment failure:', error);
+            throw error;
         }
     }
 
@@ -230,55 +439,10 @@ class OrderService {
         }
     }
 
-    async getOrdersForSeller(sellerId, token) {
+    async getOrdersForSeller(sellerId) {
         try {
-            // First, get all products created by this seller from the Product Service
-            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
-            
-            // Add timeout to prevent hanging requests
-            let sellerProducts = [];
-            try {
-                // Ensure the token is in the correct format - the Product Service expects "Bearer token"
-                // but our middleware extracts just the token part, so we need to add "Bearer " back
-                const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-                
-                const productsResponse = await axios.get(
-                    `${productServiceUrl}/products`, 
-                    {
-                        headers: {
-                            Authorization: authHeader
-                        },
-                        timeout: 5000 // 5 second timeout
-                    }
-                );
-                
-                // Filter products by seller ID since we're getting all products
-                sellerProducts = productsResponse.data.filter(product => 
-                    product.createdBy && product.createdBy._id === sellerId
-                );
-            } catch (apiError) {
-                console.error('Error fetching products from Product Service:', apiError.message);
-                if (apiError.response) {
-                    console.error('Status:', apiError.response.status);
-                    console.error('Data:', apiError.response.data);
-                } else if (apiError.request) {
-                    console.error('No response received');
-                } else {
-                    console.error('Unknown error:', apiError);
-                }
-                // If the endpoint doesn't exist or times out, we'll continue with an empty products array
-                // This prevents the request from hanging indefinitely
-            }
-            
-            if (!sellerProducts || sellerProducts.length === 0) {
-                return [];
-            }
-            
-            // Get product IDs created by this seller
-            const sellerProductIds = sellerProducts.map(product => product._id);
-            
-            // Find all orders that contain any of the seller's products using the repository
-            const orders = await orderRepository.findOrdersForProducts(sellerProductIds);
+            // Get all orders that contain any of the seller's products using the repository
+            const orders = await orderRepository.findOrdersForProducts(sellerId);
             
             // For each order, filter items to only include those from this seller
             const sellerOrders = orders.map(order => {
@@ -286,7 +450,7 @@ class OrderService {
                 
                 // Filter items to only include those from this seller
                 const sellerItems = orderObj.items.filter(item => 
-                    sellerProductIds.includes(item.productId.toString())
+                    item.sellerId === sellerId
                 );
                 
                 // Calculate the total amount for just this seller's items
@@ -307,9 +471,8 @@ class OrderService {
             // Only return orders that still have items after filtering
             return sellerOrders.filter(order => order.items.length > 0);
         } catch (error) {
-            console.error('Error in getOrdersForSeller:', error);
-            // Return empty array instead of throwing to prevent request hanging
-            return [];
+            logger.error('Error in getOrdersForSeller:', error);
+            throw error;
         }
     }
 }

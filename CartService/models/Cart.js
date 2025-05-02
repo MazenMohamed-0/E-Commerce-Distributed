@@ -1,29 +1,9 @@
 const mongoose = require('mongoose');
 
-const sellerSchema = new mongoose.Schema({
-  _id: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true
-  },
-  name: {
-    type: String,
-    required: true
-  },
-  storeName: {
-    type: String,
-    required: true
-  },
-  role: {
-    type: String,
-    required: true
-  }
-}, { _id: false });
-
 const cartItemSchema = new mongoose.Schema({
   productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'Product'
+    type: String,
+    required: true
   },
   quantity: {
     type: Number,
@@ -44,15 +24,13 @@ const cartItemSchema = new mongoose.Schema({
   },
   imageUrl: {
     type: String
-  },
-  seller: sellerSchema
+  }
 });
 
 const cartSchema = new mongoose.Schema({
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: String,
     required: true,
-    ref: 'User',
     unique: true
   },
   items: [cartItemSchema],
@@ -68,6 +46,12 @@ const cartSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+// Add pre-save middleware to handle events
+cartSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
 });
 
 module.exports = mongoose.model('Cart', cartSchema);

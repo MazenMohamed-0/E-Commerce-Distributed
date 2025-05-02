@@ -21,6 +21,7 @@ router.get('/:id', async (req, res) => {
         res.status(404).json({ message: error.message });
     }
 });
+
 // Protected routes (require authentication)
 router.use(verifyToken);
 
@@ -33,8 +34,6 @@ router.get('/seller', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
-
-// Get product by ID (must be after specific routes like /seller)
 
 // Special endpoint for order processing to reduce stock
 router.post('/:id/reduce-stock', async (req, res) => {
@@ -55,10 +54,9 @@ router.post('/:id/reduce-stock', async (req, res) => {
             return res.status(400).json({ message: 'Invalid quantity specified' });
         }
         
-        const result = await productService.reduceProductStock(
+        const result = await productService.updateStock(
             req.params.id, 
-            quantity,
-            orderId
+            quantity
         );
         
         res.json(result);

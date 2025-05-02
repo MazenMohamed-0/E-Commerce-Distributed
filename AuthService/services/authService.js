@@ -194,6 +194,50 @@ class AuthService {
       throw new Error('Invalid token');
     }
   }
+
+  async getUserProfile(userId) {
+    try {
+      // Try to find user in any of the user collections
+      let user = await User.findById(userId);
+      
+      if (!user) {
+        // If not found in User collection, try Seller
+        user = await Seller.findById(userId);
+      }
+      
+      if (!user) {
+        // If not found in Seller collection, try Buyer
+        user = await Buyer.findById(userId);
+      }
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Prepare the response object with common fields
+      const userProfile = {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt
+      };
+
+      // Add seller-specific fields if the user is a seller
+      if (user.role === 'seller') {
+        userProfile.storeName = user.storeName;
+        userProfile.taxNumber = user.taxNumber;
+        userProfile.storeDescription = user.storeDescription;
+        userProfile.contactNumber = user.contactNumber;
+        userProfile.status = user.status;
+      }
+
+      return userProfile;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      throw new Error('Failed to fetch user profile');
+    }
+  }
 }
 
 module.exports = new AuthService();

@@ -1,151 +1,316 @@
-const cartRepository = require('../repositories/cartRepository');
-const axios = require('axios');
+const Cart = require('../models/Cart');
+const cartEventHandler = require('../events/cartEventHandler');
+const rabbitmq = require('../../shared/rabbitmq');
+const winston = require('winston');
+const jwt = require('jsonwebtoken');
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'cart-service.log' })
+  ]
+});
 
 class CartService {
-    async getCart(userId) {
-        try {
-            let cart = await cartRepository.findByUser(userId);
-            if (!cart) {
-                // Create a new cart if one doesn't exist
-                const cartData = {
-                    userId,
-                    items: [],
-                    totalAmount: 0
-                };
-                cart = await cartRepository.create(cartData);
-            }
-            
-            return cart;
+  constructor() {
+    this.initializeProductEventHandler();
+  }
+
+  async initializeProductEventHandler() {
+    try {
+      // Subscribe to product responses
+      await rabbitmq.subscribe(
+        'product-events',
+        'cart-service-product-details',
+        'product.details.response',
+        this.handleProductDetailsResponse.bind(this)
+      );
         } catch (error) {
-            throw new Error('Error fetching cart: ' + error.message);
-        }
+      logger.error('Error initializing product event handler:', error);
     }
+  }
 
-    async addToCart(userId, item, token) {
-        try {
-            // Verify product exists and get details from Product Service
-            const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
-            const productResponse = await axios.get(`${productServiceUrl}/products/${item.productId}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            const product = productResponse.data;
+  // Store callbacks for pending product detail requests
+  productDetailsCallbacks = new Map();
 
-            if (!product) {
-                throw new Error('Product not found');
-            }
+  async getProductDetails(productId) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('Requesting product details for:', productId);
+        // Store the callback with the productId as key
+        this.productDetailsCallbacks.set(productId, { resolve, reject });
 
-            if (!product.createdBy) {
-                throw new Error('Product seller information not found');
-            }
-            
-            // Create a cart item with product details
-            const cartItem = {
-                productId: item.productId,
-                quantity: item.quantity,
-                price: product.price,
-                name: product.name,
-                imageUrl: product.imageUrl,
-                stock: product.stock,
-                seller: {
-                    _id: product.createdBy._id,
-                    name: product.createdBy.name,
-                    storeName: product.createdBy.storeName,
-                    role: product.createdBy.role
-                }
-            };
-            
-            // Use the repository to add the item to the cart
-            // This handles checking for existing items and stock validation
-            const updatedCart = await cartRepository.addItem(userId, cartItem);
-            return updatedCart;
-        } catch (error) {
-            throw new Error('Error adding item to cart: ' + error.message);
+        // Publish request for product details
+        rabbitmq.publish('product-events', 'product.details.request', {
+          type: 'product.details.request',
+          data: {
+            productId,
+            replyTo: 'product.details.response'
+          }
+        });
+
+        // Set timeout for the request
+        setTimeout(() => {
+          if (this.productDetailsCallbacks.has(productId)) {
+            this.productDetailsCallbacks.delete(productId);
+            reject(new Error('Product details request timed out'));
+          }
+        }, 5000); // 5 seconds timeout
+
+      } catch (error) {
+        this.productDetailsCallbacks.delete(productId);
+        reject(error);
+      }
+    });
+  }
+
+  async handleProductDetailsResponse(message) {
+    try {
+      console.log('Received product details response:', message);
+      const { data } = message;
+      const { productId, error } = data;
+      const callback = this.productDetailsCallbacks.get(productId);
+
+      if (callback) {
+        if (error) {
+          callback.reject(new Error(error));
+        } else {
+          callback.resolve(data);
         }
+        this.productDetailsCallbacks.delete(productId);
+      }
+    } catch (error) {
+      logger.error('Error handling product details response:', error);
     }
+  }
 
-    async updateCartItem(userId, productId, quantity, token) {
-        try {
-            // Check if the cart exists
-            const cart = await cartRepository.findByUser(userId);
-            if (!cart) {
-                throw new Error('Cart not found');
-            }
-            
-            // Find the item in the cart
-            const itemIndex = cart.items.findIndex(
-                item => item.productId.toString() === productId
-            );
-            
-            if (itemIndex === -1) {
-                throw new Error('Item not found in cart');
-            }
-            
-            if (quantity <= 0) {
-                // Remove item if quantity is 0 or negative
-                return await cartRepository.removeItem(userId, productId);
-            } else {
-                // Always check product stock regardless of whether increasing or decreasing
-                const productServiceUrl = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
-                const productResponse = await axios.get(`${productServiceUrl}/products/${productId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                const product = productResponse.data;
-                
-                // Check if requested quantity exceeds available stock
-                if (product.stock < quantity) {
-                    throw new Error(`Not enough stock available. Only ${product.stock} items in stock, but ${quantity} requested.`);
-                }
-                
-                // Use the repository to update the cart item
-                return await cartRepository.updateItem(userId, productId, quantity);
-            }
-        } catch (error) {
-            throw new Error('Error updating cart item: ' + error.message);
+  async getCart(userId) {
+    try {
+      const cart = await Cart.findOne({ userId });
+      if (!cart) {
+        return { userId, items: [], totalAmount: 0 };
+      }
+
+      // Get unique product IDs from cart
+      const productIds = [...new Set(cart.items.map(item => item.productId))];
+      
+      if (productIds.length === 0) {
+        return {
+          userId: cart.userId,
+          items: [],
+          totalAmount: 0
+        };
+      }
+
+      // Request product details for all products in cart
+      const productDetailsPromises = productIds.map(productId => 
+        this.getProductDetails(productId)
+      );
+      
+      const productDetails = await Promise.all(productDetailsPromises);
+      
+      // Create a map of product details for easy lookup
+      const productDetailsMap = productDetails.reduce((map, product) => {
+        if (!product) {
+          throw new Error(`Product details not found for productId: ${product.productId}`);
         }
+        map[product.productId] = product;
+        return map;
+      }, {});
+
+      // Enrich cart items with product details
+      const enrichedItems = cart.items.map(item => {
+        const product = productDetailsMap[item.productId];
+        if (!product) {
+          throw new Error(`Product details not found for productId: ${item.productId}`);
+        }
+        
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          name: product.name,
+          price: product.price,
+          stock: product.stock,
+          imageUrl: product.imageUrl,
+          sellerId: product.sellerId
+        };
+      });
+
+      // Calculate total amount
+      const totalAmount = enrichedItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+
+      return {
+        userId: cart.userId,
+        items: enrichedItems,
+        totalAmount
+      };
+    } catch (error) {
+      logger.error('Error getting cart:', error);
+      throw error;
     }
+  }
+
+  async addToCart(userId, itemData, token) {
+    try {
+      // Validate token is provided
+      if (!token) {
+        throw new Error('Authorization token is required');
+      }
+
+      // Request product details through RabbitMQ
+      const productDetails = await this.getProductDetails(itemData.productId);
+      
+      // Validate product exists
+      if (!productDetails) {
+        throw new Error('Product not found');
+      }
+
+      // Validate stock availability
+      if (productDetails.stock < itemData.quantity) {
+        throw new Error(`Requested quantity (${itemData.quantity}) exceeds available stock (${productDetails.stock})`);
+      }
+
+      let cart = await Cart.findOne({ userId });
+
+      if (!cart) {
+        cart = new Cart({ userId, items: [] });
+      }
+
+      // Check if product already exists in cart
+      const existingItemIndex = cart.items.findIndex(item => item.productId === itemData.productId);
+
+      if (existingItemIndex >= 0) {
+        // Calculate total quantity including existing items
+        const newTotalQuantity = cart.items[existingItemIndex].quantity + itemData.quantity;
+        
+        // Validate total quantity against stock
+        if (newTotalQuantity > productDetails.stock) {
+          throw new Error(`Total quantity (${newTotalQuantity}) would exceed available stock (${productDetails.stock})`);
+        }
+        
+        cart.items[existingItemIndex].quantity = newTotalQuantity;
+        // Update stock information
+        cart.items[existingItemIndex].stock = productDetails.stock;
+      } else {
+        // Add new item with only necessary information
+        cart.items.push({
+          productId: itemData.productId,
+          quantity: itemData.quantity,
+          price: productDetails.price,
+          stock: productDetails.stock,
+          name: productDetails.name,
+          imageUrl: productDetails.imageUrl
+        });
+      }
+
+      // Update total amount
+      cart.totalAmount = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      await cart.save();
+
+      // Publish cart updated event with minimal information
+      await cartEventHandler.publishCartEvent('CART_UPDATED', {
+        userId,
+        items: cart.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity
+        }))
+      });
+
+      logger.info(`Cart updated for user: ${userId}`);
+      return cart;
+    } catch (error) {
+      logger.error('Error adding to cart:', error);
+      throw error;
+    }
+  }
 
     async removeFromCart(userId, productId) {
         try {
-            // Check if the cart exists
-            const cart = await cartRepository.findByUser(userId);
+      const cart = await Cart.findOne({ userId });
+
             if (!cart) {
                 throw new Error('Cart not found');
             }
             
-            // Find the item in the cart
-            const itemIndex = cart.items.findIndex(
-                item => item.productId.toString() === productId
-            );
-            
-            if (itemIndex === -1) {
-                throw new Error('Item not found in cart');
-            }
-            
-            // Use the repository to remove the item
-            return await cartRepository.removeItem(userId, productId);
+      cart.items = cart.items.filter(item => item.productId !== productId);
+      cart.totalAmount = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      await cart.save();
+
+      // Publish cart updated event
+      await cartEventHandler.publishCartEvent('CART_UPDATED', {
+        userId,
+        items: cart.items
+      });
+
+      logger.info(`Item removed from cart: ${productId} for user: ${userId}`);
+      return cart;
         } catch (error) {
-            throw new Error('Error removing item from cart: ' + error.message);
+      logger.error('Error removing from cart:', error);
+      throw error;
         }
     }
 
     async clearCart(userId) {
         try {
-            // Check if the cart exists
-            const cart = await cartRepository.findByUser(userId);
+      const cart = await Cart.findOneAndUpdate(
+        { userId },
+        { items: [], totalAmount: 0 },
+        { new: true }
+      );
+
             if (!cart) {
                 throw new Error('Cart not found');
             }
             
-            // Use the repository to clear the cart
-            await cartRepository.clearCart(userId);
-            return { message: 'Cart cleared successfully' };
+      // Publish cart updated event
+      await cartEventHandler.publishCartEvent('CART_UPDATED', {
+        userId,
+        items: []
+      });
+
+      logger.info(`Cart cleared for user: ${userId}`);
+      return cart;
         } catch (error) {
-            throw new Error('Error clearing cart: ' + error.message);
-        }
+      logger.error('Error clearing cart:', error);
+      throw error;
+    }
+  }
+
+  async updateItemQuantity(userId, productId, quantity) {
+    try {
+      const cart = await Cart.findOne({ userId });
+
+      if (!cart) {
+        throw new Error('Cart not found');
+      }
+
+      const itemIndex = cart.items.findIndex(item => item.productId === productId);
+      if (itemIndex === -1) {
+        throw new Error('Item not found in cart');
+      }
+
+      cart.items[itemIndex].quantity = quantity;
+      cart.totalAmount = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      await cart.save();
+
+      // Publish cart updated event
+      await cartEventHandler.publishCartEvent('CART_UPDATED', {
+        userId,
+        items: cart.items
+      });
+
+      logger.info(`Item quantity updated in cart: ${productId} to ${quantity} for user: ${userId}`);
+      return cart;
+    } catch (error) {
+      logger.error('Error updating item quantity:', error);
+      throw error;
+    }
     }
 }
 

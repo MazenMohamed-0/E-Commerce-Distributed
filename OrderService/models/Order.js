@@ -2,9 +2,12 @@ const mongoose = require('mongoose');
 
 const orderItemSchema = new mongoose.Schema({
   productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'Product'
+    type: String,
+    required: true
+  },
+  sellerId: {
+    type: String,
+    required: true
   },
   quantity: {
     type: Number,
@@ -19,9 +22,8 @@ const orderItemSchema = new mongoose.Schema({
 
 const orderSchema = new mongoose.Schema({
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User'
+    type: String,
+    required: true
   },
   items: [orderItemSchema],
   totalAmount: {
@@ -55,6 +57,12 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+// Add pre-save middleware to handle events
+orderSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
 });
 
 module.exports = mongoose.model('Order', orderSchema); 

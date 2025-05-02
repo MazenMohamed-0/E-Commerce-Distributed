@@ -196,55 +196,58 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('Handling OAuth login...');
       setLoading(true);
+      setError(null); // Clear any previous errors
+      
+      if (!token || typeof token !== 'string') {
+        throw new Error('Invalid token format');
+      }
       
       // Save token first
       localStorage.setItem('token', token);
       console.log('Token saved to localStorage');
       
+      // Verify the token works by making a test request
+      const testResponse = await axios.get('http://localhost:3001/auth/verify-token', {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!testResponse.data.valid) {
+        throw new Error('Token validation failed');
+      }
+      
       // Get user profile using the token
       const user = await getProfile();
       console.log('OAuth user profile:', user);
       
-      if (user) {
-        setUser(user);
-        setError(null);
+      if (!user) {
+        throw new Error('Failed to fetch user profile');
+      }
+      
+      setUser(user);
+      setError(null);
 
-        // User with a role
-        if (user.role) {
-          // If seller with pending status
-          if (user.role === 'seller' && user.status === 'pending') {
-            console.log('Seller account is pending approval');
-            setError('Your seller account is pending approval. Please wait for admin verification.');
-            // Clear token and user data to keep them on login page
-            localStorage.removeItem('token');
-            setUser(null);
-            return false;
-          }
-          // Any other role
+      // Handle user role checks
+      if (user.role) {
+        if (user.role === 'seller' && user.status === 'pending') {
+          console.log('Seller account is pending approval');
+          setError('Your seller account is pending approval. Please wait for admin verification.');
+          localStorage.removeItem('token');
+          setUser(null);
           return false;
         }
-        
-        // User without a role
-        return true;
+        return false;
       }
       
-      // If no user profile, try to create one
-      console.log('No user profile found, creating new user...');
-      const response = await axios.post('http://localhost:3001/auth/oauth-user', {
-        token
-      });
-      
-      if (response.data && response.data.user) {
-        setUser(response.data.user);
-        setError(null);
-        // Return opposite of whether they have a role
-        return !response.data.user.role;
-      }
-      
-      throw new Error('Failed to create or get user profile');
+      return true;
     } catch (err) {
       console.error('OAuth login error:', err);
-      setError(err.message || 'OAuth login failed');
+      // Clear invalid token
+      localStorage.removeItem('token');
+      setUser(null);
+      setError(err.response?.data?.message || err.message || 'OAuth login failed');
       throw err;
     } finally {
       setLoading(false);
@@ -259,11 +262,11 @@ export const AuthProvider = ({ children }) => {
   const getProfile = async () => {
     try {
       const token = localStorage.getItem('token');
-      console.log('Making profile request with token:', token);
+      console.log('Making profile request with token');
       
       if (!token) {
         console.log('No token available for profile request');
-        return null;
+        throw new Error('No authentication token found');
       }
       
       const response = await axios.get('http://localhost:3001/auth/profile', {
@@ -273,19 +276,27 @@ export const AuthProvider = ({ children }) => {
         }
       });
       
-      console.log('Profile response:', response.data);
+      console.log('Profile response received');
       
       if (!response.data) {
         throw new Error('No user data received');
+      }
+      
+      // Validate user data structure
+      if (!response.data.id || !response.data.email) {
+        throw new Error('Invalid user data structure received');
       }
       
       setUser(response.data);
       return response.data;
     } catch (err) {
       console.error('Error fetching profile:', err);
-      console.error('Error response:', err.response?.data);
-      // Don't logout on error, just return null
-      return null;
+      if (err.response?.status === 401) {
+        // Clear invalid token on unauthorized
+        localStorage.removeItem('token');
+        setUser(null);
+      }
+      throw err; // Propagate error instead of swallowing it
     }
   };
 

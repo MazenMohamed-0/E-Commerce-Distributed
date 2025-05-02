@@ -39,6 +39,12 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
+// Initialize event handlers
+const authEventHandler = require('./events/authEventHandler');
+authEventHandler.initializeEventHandlers()
+  .then(() => console.log('Auth event handlers initialized'))
+  .catch((err) => console.error('Error initializing auth event handlers:', err));
+
 // Routes
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
