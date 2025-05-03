@@ -14,9 +14,22 @@ export const CartProvider = ({ children }) => {
   const CART_SERVICE_URL = config.CART_SERVICE_URL;
   const PRODUCT_SERVICE_URL = config.PRODUCT_SERVICE_URL;
 
+  // Helper function to check if user can use cart
+  const canUseCart = () => {
+    // If user is not authenticated or is a buyer, allow cart use
+    return !user || user.role !== 'seller';
+  };
+
   // Load cart items from localStorage on initial render
   useEffect(() => {
     try {
+      // Don't load cart for sellers
+      if (!canUseCart()) {
+        setCartItems([]);
+        setTotalAmount(0);
+        return;
+      }
+
       const localCart = JSON.parse(localStorage.getItem('cart')) || [];
       setCartItems(Array.isArray(localCart) ? localCart : []);
       // Calculate initial total for local cart
@@ -27,7 +40,7 @@ export const CartProvider = ({ children }) => {
       setCartItems([]);
       setTotalAmount(0);
     }
-  }, []);
+  }, [user]);
 
   // Sync local cart to service when user logs in
   useEffect(() => {
@@ -58,6 +71,10 @@ export const CartProvider = ({ children }) => {
 
   const syncLocalCartToService = async () => {
     try {
+      if (!canUseCart()) {
+        return;
+      }
+
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('No token found');
@@ -154,6 +171,10 @@ export const CartProvider = ({ children }) => {
   };
 
   const fetchCartItems = async () => {
+    if (!canUseCart()) {
+      return null;
+    }
+
     if (user && user.role === 'buyer') {
       try {
         const token = localStorage.getItem('token');
@@ -194,6 +215,10 @@ export const CartProvider = ({ children }) => {
 
   const addToCartService = async (product, quantity = 1) => {
     try {
+      if (!canUseCart()) {
+        throw new Error('Sellers cannot add items to cart');
+      }
+
       console.log('addToCartService called with:', { product, quantity });
       const token = localStorage.getItem('token');
       if (!token) {
@@ -277,6 +302,14 @@ export const CartProvider = ({ children }) => {
   };
 
   const addToCart = async (product, quantity = 1) => {
+    if (!canUseCart()) {
+      setError({
+        severity: 'error',
+        message: 'Sellers cannot use the shopping cart'
+      });
+      return;
+    }
+
     if (user && user.role === 'buyer') {
       // Authenticated user - use cart service
       try {
@@ -291,7 +324,7 @@ export const CartProvider = ({ children }) => {
           });
         }
       }
-    } else {
+    } else if (!user) {
       // Unauthenticated user - use localStorage
       try {
         console.log('Local addToCart called with:', { product, quantity });
@@ -347,13 +380,17 @@ export const CartProvider = ({ children }) => {
   };
 
   const removeFromCart = async (productId) => {
+    if (!canUseCart()) {
+      return;
+    }
+
     if (user && user.role === 'buyer') {
       try {
         const token = localStorage.getItem('token');
         if (!token) {
           throw new Error('No token found');
         }
-
+        
         const response = await axios.delete(`${CART_SERVICE_URL}/cart/${productId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -367,7 +404,7 @@ export const CartProvider = ({ children }) => {
       } catch (error) {
         console.error('Error removing from cart:', error);
       }
-    } else {
+    } else if (!user) {
       // Unauthenticated user - use localStorage
       try {
         const localCart = JSON.parse(localStorage.getItem('cart')) || [];
@@ -386,6 +423,10 @@ export const CartProvider = ({ children }) => {
   };
 
   const updateQuantity = async (productId, quantity) => {
+    if (!canUseCart()) {
+      return;
+    }
+
     console.log('1. updateQuantity called with:', { productId, quantity, type: typeof quantity });
 
     if (user && user.role === 'buyer') {
@@ -400,112 +441,108 @@ export const CartProvider = ({ children }) => {
         // Validate quantity
         const validQuantity = Number(quantity);
         console.log('3b. Parsed quantity:', validQuantity);
-
-        if (isNaN(validQuantity) || validQuantity < 1) {
-          console.error('3c. Invalid quantity value');
-          throw new Error('Invalid quantity. Must be a positive number.');
+        
+        if (!validQuantity || validQuantity <= 0) {
+          console.error('3c. Invalid quantity:', validQuantity);
+          throw new Error('Quantity must be greater than 0');
+        }
+        
+        // Check for product limit before updating
+        const product = cartItems.find(item => item.productId === productId);
+        if (product && product.stock < validQuantity) {
+          console.error('4. Quantity exceeds stock:', { requested: validQuantity, available: product.stock });
+          showStockError(product.stock);
+          return;
         }
 
-        // Log the current cart state
-        console.log('4. Current cart state:', {
-          cartItems: cartItems.length,
-          targetItem: cartItems.find(item => item.productId === productId)
-        });
-
-        // Find the item in the cart to verify it exists
-        const cartItem = cartItems.find(item => item.productId === productId);
-        if (!cartItem) {
-          console.error('5a. Item not found in cart');
-          throw new Error('Item not found in cart');
-        }
-
-        // Validate against stock
-        if (validQuantity > cartItem.stock) {
-          console.error('5b. Exceeds stock limit');
-          throw new Error(`Cannot exceed available stock of ${cartItem.stock}`);
-        }
-
-        console.log('6. Sending update request:', {
-          url: `${CART_SERVICE_URL}/cart/${productId}`,
-          quantity: validQuantity
-        });
-
+        console.log('5. Making API request with:', { productId, quantity: validQuantity });
+        // Update in cart service
         const response = await axios.put(
           `${CART_SERVICE_URL}/cart/${productId}`,
-          { 
-            quantity: validQuantity
-          },
-          { 
-            headers: { 
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
+          { quantity: validQuantity },
+          { headers: { Authorization: `Bearer ${token}` } }
         );
         
-        if (response.data) {
-          console.log('7. Update successful:', response.data);
-          // Process the response data correctly
-          const cartData = response.data.cart || response.data;
-          const items = cartData.items || [];
-          setCartItems(Array.isArray(items) ? items : []);
-          setTotalAmount(cartData.totalAmount || 0);
-        } else {
-          console.error('7. Invalid response');
-          throw new Error('Invalid response from cart service');
-        }
+        console.log('6. Response from cart service:', response.data);
+        
+        // Process the response data
+        const cartData = response.data.cart || response.data;
+        const items = cartData.items || [];
+        setCartItems(Array.isArray(items) ? items : []);
+        setTotalAmount(cartData.totalAmount || 0);
+        
+        console.log('7. Cart updated successfully', { itemCount: items.length });
       } catch (error) {
-        console.error('8. Error in updateQuantity:', {
-          message: error.message,
-          response: error.response?.data,
-          status: error.response?.status
+        console.error('8. Error updating cart quantity:', error);
+        setError({
+          message: error.message || 'Failed to update quantity',
+          severity: 'error'
         });
-        throw error;
       }
-    } else {
-      console.log('2. Unauthenticated user flow');
+    } else if (!user) {
+      // Unauthenticated user - use localStorage
+      console.log('9. Unauthenticated user flow');
       try {
         const validQuantity = Number(quantity);
-        if (isNaN(validQuantity) || validQuantity < 1) {
-          throw new Error('Invalid quantity. Must be a positive number.');
+        if (!validQuantity || validQuantity <= 0) {
+          throw new Error('Quantity must be greater than 0');
         }
-
-        const localCart = JSON.parse(localStorage.getItem('cart')) || [];
-        const updatedCart = localCart.map(item => {
-          if (item.productId === productId) {
-            if (validQuantity > item.stock) {
-              throw new Error(`Cannot exceed available stock of ${item.stock}`);
-            }
-            return { ...item, quantity: validQuantity };
-          }
-          return item;
-        });
         
-        localStorage.setItem('cart', JSON.stringify(updatedCart));
-        setCartItems(updatedCart);
-        const newTotal = updatedCart.reduce((total, item) => total + (item.price * item.quantity), 0);
+        const localCart = JSON.parse(localStorage.getItem('cart')) || [];
+        const item = localCart.find(item => item.productId === productId);
+        
+        if (!item) {
+          throw new Error('Item not found in cart');
+        }
+        
+        // Check stock limit
+        if (item.stock < validQuantity) {
+          showStockError(item.stock);
+          return;
+        }
+        
+        // Update quantity
+        item.quantity = validQuantity;
+        localStorage.setItem('cart', JSON.stringify(localCart));
+        setCartItems(localCart);
+        
+        // Calculate total for local cart
+        const newTotal = localCart.reduce((total, item) => total + (item.price * item.quantity), 0);
         setTotalAmount(newTotal);
+        
+        console.log('10. Local cart updated successfully');
       } catch (error) {
-        console.error('Error updating local cart quantity:', error);
-        throw error;
+        console.error('11. Error updating local cart:', error);
+        setError({
+          message: error.message || 'Failed to update quantity',
+          severity: 'error'
+        });
       }
     }
   };
 
-  const getCartItems = () => cartItems;
-
-  const getCartCount = () => {
-    if (!Array.isArray(cartItems)) {
-      console.error('cartItems is not an array:', cartItems);
-      return 0;
-    }
-    return cartItems.reduce((total, item) => total + (item.quantity || 0), 0);
+  // Helper functions
+  const getCartItems = () => {
+    return canUseCart() ? cartItems : [];
   };
 
-  const getTotal = () => totalAmount;
+  const getCartCount = () => {
+    if (!canUseCart()) {
+      return 0;
+    }
+    return cartItems ? cartItems.reduce((total, item) => total + item.quantity, 0) : 0;
+  };
 
+  const getTotal = () => {
+    return canUseCart() ? totalAmount : 0;
+  };
+  
   // Add a function to clear the cart
   const clearCart = async () => {
+    if (!canUseCart()) {
+      return false;
+    }
+    
     try {
       // Check if user is authenticated
       const token = localStorage.getItem('token');
@@ -536,7 +573,7 @@ export const CartProvider = ({ children }) => {
 
   return (
     <CartContext.Provider value={{
-      cartItems,
+      cartItems: getCartItems(),
       addToCart,
       removeFromCart,
       updateQuantity,

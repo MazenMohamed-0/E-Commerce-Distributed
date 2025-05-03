@@ -11,12 +11,8 @@ app.use(cors());
 app.use(express.json());
 
 // Default MongoDB URI if not set in .env
-const MONGODB_URI = 'mongodb+srv://ramezfathi:RQVKiyEfmY69IG7D@cluster0.kamuf9s.mongodb.net/cart?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.CONNECTION_STRING;
 const PORT = 3003;
-
-console.log('Cart Service: Environment Variables Loaded');
-console.log('Cart Service: Mongo URI:', MONGODB_URI);
-console.log('Product Service: JWT Secret:', process.env.JWT_SECRET);
 
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -36,4 +32,4 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Cart Service is up and running!' });
 });
 
-app.listen(PORT, () => console.log(`Cart Service running on port ${PORT}`));
+app.listen(PORT, () => {});

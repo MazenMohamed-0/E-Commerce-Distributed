@@ -13,12 +13,13 @@ import {
 } from '@mui/material';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import Navbar from '../components/Navbar';
 
 // Stripe public key
 const stripePromise = loadStripe('pk_test_51RKSD3PMNHEuOAn3NdKG49tCTAVd2ULBxZyyqnw2A2FZYpa6s7XJmemez7i9581omBQoPgKxk0L86d2ToCXLcICe00PN0VHHoE');
 
 // Stripe Payment Form Component
-const StripeCheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
+const StripeCheckoutForm = ({ orderId, onSuccess, onError }) => {
   const stripe = useStripe();
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,7 +45,7 @@ const StripeCheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + '/orders', // Redirect to orders page after payment
+          return_url: window.location.origin + '/order', // Redirect to orders page after payment
         },
         redirect: 'if_required',
       });
@@ -159,9 +160,38 @@ const StripePayment = () => {
                       (response.data.order && response.data.order.payment?.stripeClientSecret);
         
         if (!secret) {
-          setError('No payment information found for this order');
-          setLoading(false);
-          return;
+          console.log('No client secret found in order response, attempting to create payment directly');
+          
+          try {
+            // Try to directly create a payment for the order if no client secret is found
+            const paymentResponse = await axios.post(
+              'http://localhost:3005/payments', 
+              {
+                orderId: id,
+                amount: response.data.totalAmount || 5000, // Default to 5000 cents ($50.00) if no amount found
+                currency: 'USD',
+                paymentMethod: 'stripe'
+              },
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            
+            console.log('Created payment directly:', paymentResponse.data);
+            
+            if (paymentResponse.data && paymentResponse.data.stripeClientSecret) {
+              setClientSecret(paymentResponse.data.stripeClientSecret);
+              setLoading(false);
+              return;
+            } else {
+              setError('Could not create payment. Please try again later.');
+              setLoading(false);
+              return;
+            }
+          } catch (paymentError) {
+            console.error('Error creating payment directly:', paymentError);
+            setError('Failed to create payment. Please try again or contact support.');
+            setLoading(false);
+            return;
+          }
         }
         
         setClientSecret(secret);
@@ -178,7 +208,7 @@ const StripePayment = () => {
 
   const handlePaymentSuccess = () => {
     // Navigate to order success page
-    navigate(`/orders/${orderId}`);
+    navigate(`/order/${orderId}`);
   };
   
   const handlePaymentError = (message) => {
@@ -229,47 +259,51 @@ const StripePayment = () => {
   };
 
   return (
-    <Container maxWidth="sm" sx={{ py: 8 }}>
-      <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h4" gutterBottom align="center">
-          Complete Your Payment
-        </Typography>
-        
-        {orderDetails && (
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" gutterBottom>
-              Order Summary
-            </Typography>
-            <Typography>
-              Order ID: {orderId}
-            </Typography>
-            <Typography variant="h6" sx={{ mt: 2 }}>
-              Total: ${orderDetails.totalAmount?.toFixed(2) || orderDetails.order?.totalAmount?.toFixed(2) || '0.00'}
-            </Typography>
+    <>
+      <Navbar />
+      <Container maxWidth="md" sx={{ py: 8 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h4" gutterBottom align="center">
+            Complete Your Payment
+          </Typography>
+          
+          {orderDetails && (
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="h6" gutterBottom>
+                Order Summary
+              </Typography>
+              <Typography>
+                Order ID: {orderId}
+              </Typography>
+              <Typography variant="h6" sx={{ mt: 2 }}>
+                Total: ${orderDetails.totalAmount ? (orderDetails.totalAmount).toFixed(2) : 
+                         orderDetails.order?.totalAmount ? (orderDetails.order.totalAmount).toFixed(2) : 
+                         orderDetails.payment?.amount ? (orderDetails.payment.amount).toFixed(2) : '0.00'}
+              </Typography>
+            </Box>
+          )}
+          
+          <Box sx={{ mt: 4 }}>
+            <Elements stripe={stripePromise} options={options}>
+              <StripeCheckoutForm 
+                orderId={orderId}
+                onSuccess={handlePaymentSuccess}
+                onError={handlePaymentError}
+              />
+            </Elements>
           </Box>
-        )}
-        
-        <Box sx={{ mt: 4 }}>
-          <Elements stripe={stripePromise} options={options}>
-            <StripeCheckoutForm 
-              orderId={orderId}
-              clientSecret={clientSecret}
-              onSuccess={handlePaymentSuccess}
-              onError={handlePaymentError}
-            />
-          </Elements>
-        </Box>
-        
-        <Button 
-          variant="outlined" 
-          fullWidth 
-          onClick={() => navigate('/orders')}
-          sx={{ mt: 3 }}
-        >
-          Cancel Payment
-        </Button>
-      </Paper>
-    </Container>
+          
+          <Button 
+            variant="outlined" 
+            fullWidth 
+            onClick={() => navigate('/my-orders')}
+            sx={{ mt: 3 }}
+          >
+            Cancel Payment
+          </Button>
+        </Paper>
+      </Container>
+    </>
   );
 };
 

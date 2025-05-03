@@ -26,6 +26,19 @@ const paymentSchema = new mongoose.Schema({
     default: 'pending',
     index: true
   },
+  orderFulfilled: {
+    type: Boolean,
+    default: false
+  },
+  refundNeeded: {
+    type: Boolean,
+    default: false
+  },
+  refundStatus: {
+    type: String,
+    enum: ['not_needed', 'pending', 'completed', 'failed'],
+    default: 'not_needed'
+  },
   paymentMethod: {
     type: String,
     enum: ['paypal', 'stripe', 'credit_card'],

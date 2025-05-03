@@ -10,6 +10,7 @@ class RabbitMQService {
       const message = {
         service: 'payment-service',
         timestamp: new Date().toISOString(),
+        type: routingKey,
         data
       };
       
@@ -31,7 +32,7 @@ class RabbitMQService {
 
   async subscribeToOrderEvents(routingKey, callback) {
     try {
-      const queueName = `payment_service_orders`;
+      const queueName = `payment-service-${routingKey.toLowerCase().replace(/\./g, '-')}-queue`;
       
       await rabbitmq.subscribe(
         'payment-events', 
@@ -42,7 +43,6 @@ class RabbitMQService {
         }
       );
       
-      console.log(`Subscribed to payment events: ${routingKey}`);
     } catch (error) {
       console.error(`Error subscribing to payment events: ${routingKey}`, error);
       throw error;

@@ -12,7 +12,7 @@ import {
   Badge,
   IconButton
 } from '@mui/material';
-import { ShoppingCart } from '@mui/icons-material';
+import { ShoppingCart, ShoppingBag } from '@mui/icons-material';
 import { useAuth } from '../context/hooks';
 import { useCart } from '../context/CartContext';
 
@@ -36,10 +36,8 @@ const Navbar = () => {
     handleClose();
   };
 
-  const handleRecentOrders = () => {
-    navigate('/my-orders');
-    handleClose();
-  };
+  // Check if user is a seller
+  const isSeller = user && user.role === 'seller';
 
   return (
     <AppBar position="static">
@@ -54,14 +52,27 @@ const Navbar = () => {
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton 
-            color="inherit"
-            onClick={() => navigate('/cart')}
-          >
-            <Badge badgeContent={getCartCount()} color="error">
-              <ShoppingCart />
-            </Badge>
-          </IconButton>
+          {/* Only show cart for non-sellers */}
+          {!isSeller && (
+            <IconButton 
+              color="inherit"
+              onClick={() => navigate('/cart')}
+            >
+              <Badge badgeContent={getCartCount()} color="error">
+                <ShoppingCart />
+              </Badge>
+            </IconButton>
+          )}
+
+          {user && (
+            <IconButton 
+              color="inherit"
+              onClick={() => navigate('/my-orders')}
+              title="My Orders"
+            >
+              <ShoppingBag />
+            </IconButton>
+          )}
 
           {user ? (
             <>
@@ -75,7 +86,6 @@ const Navbar = () => {
                 open={Boolean(anchorEl)}
                 onClose={handleClose}
               >
-                <MenuItem onClick={handleRecentOrders}>Recent Orders</MenuItem>
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
             </>

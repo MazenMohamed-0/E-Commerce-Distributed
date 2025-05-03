@@ -5,9 +5,11 @@ const sagaOrchestrator = require('../services/sagaOrchestratorService');
 const { verifyToken, isAuthorized, isAdmin, isBuyer, isSeller } = require('../middleware/authMiddleware');
 const { v4: uuidv4 } = require('uuid');
 const Order = require('../models/Order');
+const eventTypes = require('../../shared/eventTypes');
+const orderEventHandler = require('../events/orderEventHandler');
+const axios = require('axios');
 
 // Apply JWT verification to all routes
-console.log('Applying JWT verification to all routes');
 router.use(verifyToken);
 
 // Get all orders (admin only)
@@ -56,15 +58,13 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// Create order asynchronously and return immediately
+// Create order with simplified process
 router.post('/', verifyToken, async (req, res) => {
   try {
     const { items, shippingAddress, paymentMethod, totalAmount } = req.body;
     const userId = req.user.userId;
     
-    console.log('Received order data:', JSON.stringify(req.body, null, 2));
-    
-    // Validate required fields
+    // Basic validation
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Order validation failed: items array is required and must not be empty' });
     }
@@ -73,130 +73,37 @@ router.post('/', verifyToken, async (req, res) => {
       return res.status(400).json({ message: 'Order validation failed: shippingAddress is required' });
     }
     
-    // Validate each item has required fields
-    for (const item of items) {
-      if (!item.productId) {
-        return res.status(400).json({ message: 'Order validation failed: items.productId is required' });
-      }
-      if (!item.sellerId) {
-        return res.status(400).json({ message: 'Order validation failed: items.sellerId is required' });
-      }
-      if (!item.productName) {
-        return res.status(400).json({ message: 'Order validation failed: items.productName is required' });
-      }
-      if (!item.quantity || item.quantity <= 0) {
-        return res.status(400).json({ message: 'Order validation failed: items.quantity must be greater than 0' });
-      }
-      if (item.price === undefined || item.price === null || isNaN(parseFloat(item.price))) {
-        return res.status(400).json({ message: 'Order validation failed: items.price is required and must be a number' });
-      }
-    }
-    
-    // Generate idempotency key from request or use one provided by client
-    const idempotencyKey = req.headers['idempotency-key'] || uuidv4();
-    
-    // Check for existing order with same idempotency key
-    const existingOrder = await Order.findOne({ idempotencyKey });
-    if (existingOrder) {
-      console.log('Existing order found with idempotency key', { 
-        idempotencyKey,
-        orderId: existingOrder._id,
-        status: existingOrder.status
-      });
-      
-      // If the order is still in pending or failed status, try to process it again
-      if (existingOrder.status === 'pending' || existingOrder.status === 'failed') {
-        console.log('Existing order found in pending/failed state, reprocessing:', existingOrder._id);
-        
-        // Reset the order status to pending to start fresh
-        existingOrder.status = 'pending';
-        if (existingOrder.error) {
-          existingOrder.error = null; // Clear previous errors
-        }
-        await existingOrder.save();
-        
-        // Start the saga process asynchronously - don't wait for it to finish
-        sagaOrchestrator.processOrderAsync(existingOrder)
-          .then(processedOrder => {
-            console.log('Existing order processing completed:', {
-              orderId: processedOrder._id,
-              status: processedOrder.status
-            });
-          })
-          .catch(err => {
-            console.error('Error reprocessing existing order:', err);
-          });
-      } else {
-        console.log('Existing order found with status:', existingOrder.status);
-      }
-      
-      // Return the existing order information
-      return res.status(200).json({ 
-        message: 'Order already exists', 
-        order: {
-          _id: existingOrder._id,
-          status: existingOrder.status,
-          totalAmount: existingOrder.totalAmount,
-          paymentMethod: existingOrder.paymentMethod,
-          paymentUrl: existingOrder.payment?.paymentUrl || existingOrder.paymentUrl || null
-        },
-        orderId: existingOrder._id,
-        status: existingOrder.status 
-      });
-    }
-    
-    // Calculate total amount if not provided
-    const calculatedTotalAmount = totalAmount || items.reduce((total, item) => {
-      return total + (parseFloat(item.price) * parseInt(item.quantity));
-    }, 0);
-    
-    console.log('Creating order with total amount:', calculatedTotalAmount);
-    
-    // Create order with initial pending status
-    const order = new Order({
-      userId,
-      items,
-      totalAmount: calculatedTotalAmount,
-      shippingAddress,
-      paymentMethod: paymentMethod || 'cash',
-      status: 'pending',
-      idempotencyKey,
-      sagaId: uuidv4(), // Generate a saga ID for tracking the order process
-      payment: {
-        status: 'pending'
-      }
-    });
-    
+    // Create order and check availability/stock in one step
     try {
-      // Save to database
-      await order.save();
-      
-      console.log('Order created, initiating saga process', { orderId: order._id });
-      
-      // Start the saga process asynchronously - don't wait for it to finish
-      sagaOrchestrator.processOrderAsync(order)
-        .then(processedOrder => {
-          console.log('Order processing completed:', {
-            orderId: processedOrder._id,
-            status: processedOrder.status
-          });
-        })
-        .catch(err => {
-          console.error('Error in async order processing:', err);
-        });
-      
-      // Return immediately with order ID and status
-      res.status(201).json({
-        message: 'Order created and processing started',
-        orderId: order._id,
-        status: 'pending'
+      // Process order
+      const order = await orderService.createOrder(userId, {
+        items,
+        shippingAddress,
+        paymentMethod: paymentMethod || 'cash',
+        totalAmount
       });
+      
+      // Return response based on payment method
+      if (order.paymentMethod === 'stripe' && order.payment?.stripeClientSecret) {
+        res.status(201).json({
+          message: 'Order created successfully',
+          orderId: order._id,
+          status: order.status,
+          stripeClientSecret: order.payment.stripeClientSecret,
+          stripePaymentIntentId: order.payment.stripePaymentIntentId
+        });
+      } else {
+        // For cash payment or completed orders
+        res.status(201).json({
+          message: 'Order created successfully',
+          orderId: order._id,
+          status: order.status
+        });
+      }
     } catch (error) {
-      console.error('Error saving order:', error);
       res.status(400).json({ message: error.message });
     }
   } catch (error) {
-    console.error('Error creating order:', error);
     res.status(400).json({ message: error.message });
   }
 });
@@ -222,10 +129,28 @@ router.get('/:id/status', verifyToken, async (req, res) => {
       });
     }
     
+    // Check if we need payment info but don't have it yet
+    const needsPaymentInfo = order.status === 'processing' && 
+                            order.paymentMethod === 'stripe' && 
+                            (!order.payment || !order.payment.stripeClientSecret);
+    
+    if (needsPaymentInfo) {
+      try {
+        // Try to get payment info from payment service
+        const paymentResult = await sagaOrchestrator.initiatePayment(order, order.sagaId || uuidv4());
+        
+        // Refresh order to get updated payment info
+        await order.save();
+      } catch (paymentError) {
+        // Continue with the available info even if getting payment info fails
+      }
+    }
+    
     // Create response with all necessary information
     const responseData = { 
       orderId: order._id,
       status: order.status,
+      totalAmount: order.totalAmount,
       paymentUrl: order.payment?.paymentUrl || order.paymentUrl || null,
       message: getStatusMessage(order.status),
       error: order.error || null,
@@ -238,16 +163,8 @@ router.get('/:id/status', verifyToken, async (req, res) => {
       stripeClientSecret: order.payment?.stripeClientSecret
     };
     
-    console.log('Sending order status response with payment data:', {
-      orderId: order._id,
-      status: order.status,
-      hasStripeSecret: !!order.payment?.stripeClientSecret,
-      paymentStatus: order.payment?.status
-    });
-    
     res.json(responseData);
   } catch (error) {
-    console.error('Error getting order status:', error);
     res.status(500).json({ 
       message: `Error retrieving order status: ${error.message}`,
       status: 'error',
@@ -260,9 +177,7 @@ router.get('/:id/status', verifyToken, async (req, res) => {
 function getStatusMessage(status) {
   const messages = {
     'pending': 'Your order is being processed',
-    'stock_validated': 'Stock validated, processing payment',
-    'payment_pending': 'Waiting for payment confirmation',
-    'payment_completed': 'Payment received, preparing your order',
+    'processing': 'Processing your order and payment',
     'completed': 'Order completed successfully',
     'failed': 'Order processing failed',
     'cancelled': 'Order was cancelled'
@@ -288,6 +203,141 @@ router.post('/:id/cancel', async (req, res) => {
         res.json(updatedOrder);
     } catch (error) {
         res.status(400).json({ message: error.message });
+    }
+});
+
+// Force complete order (admin only)
+router.post('/:id/complete', isAdmin, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        
+        // Update order status
+        order.status = 'completed';
+        if (order.payment) {
+            order.payment.status = 'completed';
+        }
+        
+        // Add to status history
+        if (!order.statusHistory) {
+            order.statusHistory = [];
+        }
+        
+        order.statusHistory.push({
+            status: 'completed',
+            timestamp: new Date(),
+            message: 'Order manually completed by admin'
+        });
+        
+        await order.save();
+        
+        // Publish order completed event to trigger stock reduction
+        await orderEventHandler.publishOrderEvent(eventTypes.ORDER_COMPLETED, {
+            orderId: order._id,
+            userId: order.userId
+        });
+        
+        res.json({
+            message: 'Order successfully marked as completed',
+            order: {
+                _id: order._id,
+                status: order.status,
+                updatedAt: order.updatedAt
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Refund payment for failed order (admin only)
+router.post('/:id/refund', isAdmin, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        
+        // Check if this is a failed order with completed payment
+        if (order.status !== 'failed' || order.payment?.status !== 'completed') {
+            return res.status(400).json({ 
+                message: 'Refund is only available for failed orders with completed payments',
+                orderStatus: order.status,
+                paymentStatus: order.payment?.status
+            });
+        }
+        
+        // Call payment service to process the refund
+        try {
+            const paymentId = order.payment.paymentId || order.payment.stripePaymentIntentId;
+            
+            if (!paymentId) {
+                return res.status(400).json({ message: 'No payment ID found for refund' });
+            }
+            
+            const refundResponse = await axios.post(
+                `${process.env.PAYMENT_SERVICE_URL || 'http://localhost:3005'}/payments/refund`,
+                {
+                    paymentId,
+                    orderId: order._id,
+                    amount: order.totalAmount,
+                    reason: 'Order failed but payment was processed'
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${req.headers.authorization.split(' ')[1]}`
+                    }
+                }
+            );
+            
+            // Update order with refund info
+            if (!order.payment.refunds) {
+                order.payment.refunds = [];
+            }
+            
+            order.payment.refunds.push({
+                refundId: refundResponse.data.refundId,
+                amount: order.totalAmount,
+                status: 'completed',
+                reason: 'Order failed but payment was processed',
+                createdAt: new Date()
+            });
+            
+            // Add to status history
+            if (!order.statusHistory) {
+                order.statusHistory = [];
+            }
+            
+            order.statusHistory.push({
+                status: 'payment_refunded',
+                timestamp: new Date(),
+                message: 'Payment refunded by admin'
+            });
+            
+            await order.save();
+            
+            res.json({
+                message: 'Payment refund initiated successfully',
+                order: {
+                    _id: order._id,
+                    status: order.status,
+                    paymentStatus: order.payment.status,
+                    refunded: true
+                }
+            });
+        } catch (refundError) {
+            res.status(500).json({ 
+                message: `Error processing refund: ${refundError.message}`,
+                orderDetails: {
+                    orderId: order._id,
+                    paymentId: order.payment?.paymentId || order.payment?.stripePaymentIntentId
+                }
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 });
 

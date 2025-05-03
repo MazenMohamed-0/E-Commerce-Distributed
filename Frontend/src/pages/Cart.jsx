@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Container,
   Typography,
@@ -9,12 +9,21 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import CartItem from '../components/Cart/CartItem';
 import EmptyCart from '../components/Cart/EmptyCart';
 
 const Cart = () => {
   const navigate = useNavigate();
   const { cartItems, getTotal } = useCart();
+  const { user } = useAuth();
+
+  // Redirect sellers away from cart page
+  useEffect(() => {
+    if (user && user.role === 'seller') {
+      navigate('/');
+    }
+  }, [user, navigate]);
 
   if (!cartItems || cartItems.length === 0) {
     return <EmptyCart />;

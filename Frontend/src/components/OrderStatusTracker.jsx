@@ -6,142 +6,127 @@ import {
   StepLabel, 
   Typography, 
   Paper,
-  Divider
+  useTheme
 } from '@mui/material';
 import { 
-  CheckCircle, 
-  Error, 
-  PendingOutlined, 
-  ShoppingCart, 
-  Inventory, 
-  Payment, 
-  LocalShipping 
+  ShoppingCartOutlined,
+  PaymentOutlined,
+  LocalShippingOutlined,
+  CheckCircleOutline
 } from '@mui/icons-material';
 
-// Map status to step number
-const getStepFromStatus = (status) => {
-  const statusMap = {
-    'pending': 0,
-    'stock_validating': 1,
-    'stock_validated': 1,
-    'payment_pending': 2,
-    'payment_completed': 3,
-    'completed': 4,
-    'shipped': 5,
-    'delivered': 6,
-    'failed': -1,
-    'cancelled': -1
-  };
-  
-  return statusMap[status.toLowerCase()] !== undefined ? 
-    statusMap[status.toLowerCase()] : 0;
-};
-
-// Custom step icon based on status
-const StepIcon = ({ status, active, completed, error }) => {
-  if (error) {
-    return <Error color="error" />;
-  }
-  
-  if (completed) {
-    return <CheckCircle color="success" />;
-  }
-  
-  if (active) {
-    return <PendingOutlined color="primary" />;
-  }
-  
-  // Default icons for each step
-  const icons = {
-    0: <ShoppingCart />,
-    1: <Inventory />,
-    2: <Payment />,
-    3: <Payment />,
-    4: <CheckCircle />,
-    5: <LocalShipping />
-  };
-  
-  return icons[status] || <PendingOutlined />;
-};
-
 const OrderStatusTracker = ({ order }) => {
-  if (!order) return null;
+  const theme = useTheme();
   
+  // Define steps based on our simplified status model
   const steps = [
-    'Order Placed',
-    'Stock Validation',
-    'Payment Processing',
-    'Payment Completed',
-    'Order Completed',
-    'Shipped'
+    { 
+      label: 'Order Placed', 
+      icon: <ShoppingCartOutlined />,
+      status: 'pending'
+    },
+    { 
+      label: 'Processing', 
+      icon: <PaymentOutlined />,
+      status: 'processing'
+    },
+    { 
+      label: 'Completed', 
+      icon: <CheckCircleOutline />,
+      status: 'completed'
+    }
   ];
   
-  const currentStep = getStepFromStatus(order.status);
-  const isFailed = order.status.toLowerCase() === 'failed' || 
-                  order.status.toLowerCase() === 'cancelled';
+  // Determine current active step based on order status
+  let activeStep = 0;
+  if (!order) {
+    activeStep = 0;
+  } else if (order.status === 'processing') {
+    activeStep = 1;
+  } else if (order.status === 'completed') {
+    activeStep = 2;
+  } else if (order.status === 'failed' || order.status === 'cancelled') {
+    activeStep = -1; // Special case for failed orders
+  }
   
   return (
-    <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-      <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+    <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+      <Typography variant="h6" gutterBottom>
         Order Progress
       </Typography>
       
-      <Stepper activeStep={currentStep} alternativeLabel>
-        {steps.map((label, index) => (
-          <Step 
-            key={label}
-            completed={index < currentStep && !isFailed}
-          >
-            <StepLabel 
-              error={isFailed && index === currentStep}
-              StepIconComponent={(props) => (
-                <StepIcon 
-                  {...props} 
-                  status={index} 
-                  error={isFailed && index === currentStep} 
-                />
-              )}
-            >
-              {label}
-            </StepLabel>
-          </Step>
-        ))}
-      </Stepper>
-      
-      <Divider sx={{ my: 2 }} />
-      
-      <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-        <Typography variant="body1" fontWeight="bold" sx={{ mr: 1 }}>
-          Current Status:
-        </Typography>
-        <Typography 
-          variant="body1" 
-          color={isFailed ? 'error.main' : 'primary.main'}
+      {/* For failed or cancelled orders, show special message */}
+      {(order?.status === 'failed' || order?.status === 'cancelled') ? (
+        <Box 
+          sx={{ 
+            p: 2, 
+            backgroundColor: theme.palette.error.light, 
+            color: theme.palette.error.dark,
+            borderRadius: 1,
+            my: 2 
+          }}
         >
-          {order.status}
+          <Typography variant="subtitle1">
+            {order.status === 'failed' ? 'Order Failed' : 'Order Cancelled'}
+          </Typography>
+          <Typography variant="body2">
+            {order.error?.message || (order.status === 'failed' 
+              ? 'There was an issue with your order. Please contact customer support.'
+              : 'This order has been cancelled.')}
+          </Typography>
+        </Box>
+      ) : (
+        <Stepper activeStep={activeStep} alternativeLabel sx={{ mt: 2 }}>
+          {steps.map((step, index) => (
+            <Step key={step.label}>
+              <StepLabel 
+                StepIconComponent={() => (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      backgroundColor: activeStep >= index 
+                        ? theme.palette.primary.main 
+                        : theme.palette.grey[300],
+                      color: activeStep >= index 
+                        ? theme.palette.primary.contrastText 
+                        : theme.palette.text.secondary
+                    }}
+                  >
+                    {step.icon}
+                  </Box>
+                )}
+              >
+                {step.label}
+              </StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+      )}
+      
+      {/* Show current status */}
+      <Box sx={{ mt: 3, textAlign: 'center' }}>
+        <Typography variant="body2" color="text.secondary">
+          Status: {' '}
+          <Box 
+            component="span" 
+            sx={{ 
+              fontWeight: 'bold',
+              color: order?.status === 'failed' || order?.status === 'cancelled'
+                ? theme.palette.error.main
+                : order?.status === 'completed'
+                  ? theme.palette.success.main
+                  : theme.palette.primary.main
+            }}
+          >
+            {order?.status ? order.status.charAt(0).toUpperCase() + order.status.slice(1) : 'Loading...'}
+          </Box>
         </Typography>
       </Box>
-      
-      {order.error && (
-        <Box sx={{ mt: 1 }}>
-          <Typography variant="body2" color="error">
-            Error: {order.error.message}
-          </Typography>
-          {order.error.step && (
-            <Typography variant="body2" color="text.secondary">
-              Failed during: {order.error.step}
-            </Typography>
-          )}
-        </Box>
-      )}
-      
-      {order.payment && (
-        <Box sx={{ mt: 1 }}>
-          <Typography variant="body2">
-            Payment Status: {order.payment.status}
-          </Typography>
-        </Box>
-      )}
     </Paper>
   );
 };

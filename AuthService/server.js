@@ -14,7 +14,7 @@ const app = express();
 app.use(express.json());
 const cors = require('cors');
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3001'],
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:3001'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -42,7 +42,7 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
 // Initialize event handlers
 const authEventHandler = require('./events/authEventHandler');
 authEventHandler.initializeEventHandlers()
-  .then(() => console.log('Auth event handlers initialized'))
+  .then(() => {})
   .catch((err) => console.error('Error initializing auth event handlers:', err));
 
 // Routes
@@ -52,8 +52,8 @@ app.use('/users', userRoutes);
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something broke!' });
+  res.status(500).json({ error: process.env.NODE_ENV === 'development' ? err.message : 'Something broke!' });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Auth Service running on port ${PORT}`));
+const PORT = process.env.AUTH_PORT || 3001;
+app.listen(PORT, () => {});

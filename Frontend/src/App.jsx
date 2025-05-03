@@ -23,6 +23,7 @@ import OrderDetails from './pages/OrderDetails';
 import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentCancel from './pages/PaymentCancel';
 import StripePayment from './pages/StripePayment';
+import ProcessingOrder from './pages/ProcessingOrder';
 
 const theme = createTheme({
   palette: {
@@ -53,6 +54,8 @@ function App() {
               <Route path="/checkout" element={<Checkout />} />
               <Route path="/my-orders" element={<MyOrders />} />
               <Route path="/order/:id" element={<OrderDetails />} />
+              <Route path="/processing-order/:id" element={<ProcessingOrder />} />
+              <Route path="/processing-order" element={<ProcessingOrder />} />
               <Route path="/payment/success" element={<PaymentSuccess />} />
               <Route path="/payment/cancel" element={<PaymentCancel />} />
               <Route path="/payment/stripe" element={<StripePayment />} />

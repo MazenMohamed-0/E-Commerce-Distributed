@@ -197,6 +197,83 @@ The system follows a microservices architecture with the following components:
    FACEBOOK_APP_SECRET=your_facebook_app_secret
    ```
 
+## 🔑 Environment Variables
+
+For proper configuration, each service relies on environment variables defined in `.env` files. The project now uses environment variables instead of hardcoded values.
+
+### Using the Environment Generator Script
+
+You can use the provided script to generate all required .env files:
+
+```bash
+node generate-env-files.js
+```
+
+This will create .env files for all services with default values. Remember to update sensitive values like JWT_SECRET, SESSION_SECRET, and OAuth credentials.
+
+### Frontend Environment Variables
+In `.env` file in the Frontend directory:
+```
+# Frontend Service (Vite uses VITE_ prefix)
+VITE_BACKEND_URL=http://localhost:3001
+VITE_PRODUCT_SERVICE_URL=http://localhost:3002
+VITE_CART_SERVICE_URL=http://localhost:3003
+VITE_ORDER_SERVICE_URL=http://localhost:3004
+VITE_PAYMENT_SERVICE_URL=http://localhost:3005
+VITE_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+```
+
+### Auth Service Environment Variables
+In `.env` file in the AuthService directory:
+```
+AUTH_PORT=3001
+AUTH_MONGODB_URI=mongodb://localhost:27017/auth
+SESSION_SECRET=your_session_secret
+JWT_SECRET=your_jwt_secret
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+FACEBOOK_APP_ID=your_facebook_app_id
+FACEBOOK_APP_SECRET=your_facebook_app_secret
+```
+
+### Product Service Environment Variables
+In `.env` file in the ProductService directory:
+```
+PRODUCT_PORT=3002
+PRODUCT_MONGODB_URI=mongodb://localhost:27017/product
+```
+
+### Cart Service Environment Variables
+In `.env` file in the CartService directory:
+```
+CART_PORT=3003
+CART_MONGODB_URI=mongodb://localhost:27017/cart
+```
+
+### Order Service Environment Variables
+In `.env` file in the OrderService directory:
+```
+ORDER_PORT=3004
+ORDER_MONGODB_URI=mongodb://localhost:27017/order
+```
+
+### Payment Service Environment Variables
+In `.env` file in the PaymentService directory:
+```
+PAYMENT_PORT=3005
+PAYMENT_MONGODB_URI=mongodb://localhost:27017/payment
+STRIPE_PUBLIC_KEY=your_stripe_public_key
+STRIPE_SECRET_KEY=your_stripe_secret_key
+```
+
+### Shared Environment Variables
+These are common across all services:
+```
+CORS_ORIGIN=http://localhost:5173
+NODE_ENV=development
+RABBITMQ_URL=amqp://localhost:5672
+```
+
 3. Install dependencies
    ```bash
    # Install dependencies for all services

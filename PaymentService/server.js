@@ -1,15 +1,13 @@
+require('dotenv').config(); 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const paymentRoutes = require('./routes/paymentRoutes');
 const paymentEventHandler = require('./events/paymentEventHandler');
 const path = require('path');
 const paymentService = require('./services/paymentService');
 
-// Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '.env') });
-
+// Use environment variables without hardcoding them
 const app = express();
 
 // Middleware
@@ -20,7 +18,7 @@ app.use(cors({
 }));
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI ;
+const MONGODB_URI = process.env.CONNECTION_STRING ;
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -36,7 +34,6 @@ mongoose.connect(MONGODB_URI, {
 const initEventHandlers = async () => {
   try {
     await paymentEventHandler.init();
-    console.log('Payment event handlers initialized successfully');
   } catch (error) {
     console.error('Failed to initialize event handlers:', error);
     // Don't exit the process - the event handler has retry logic
@@ -64,17 +61,13 @@ app.use('*', (req, res) => {
 });
 
 // Use PORT from environment variables with fallback
-const PORT = process.env.PORT || 3005;
-app.listen(PORT, () => {
-  console.log(`Payment Service running on port ${PORT}`);
-  console.log(`Stripe payment provider initialized and ready`);
-});
+const PORT = process.env.PAYMENT_PORT || 3005;
+app.listen(PORT, () => {});
 
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   try {
     await mongoose.connection.close();
-    console.log('MongoDB connection closed');
     process.exit(0);
   } catch (error) {
     console.error('Error during graceful shutdown:', error);

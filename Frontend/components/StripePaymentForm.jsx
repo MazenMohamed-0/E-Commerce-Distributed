@@ -3,6 +3,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import config from '../config';
 
 // Stripe public key - you should get this from your backend in production
 const stripePromise = loadStripe('pk_test_51RKSD3PMNHEuOAn3NdKG49tCTAVd2ULBxZyyqnw2A2FZYpa6s7XJmemez7i9581omBQoPgKxk0L86d2ToCXLcICe00PN0VHHoE');
@@ -13,12 +14,53 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
   const elements = useElements();
   const [errorMessage, setErrorMessage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const navigate = useNavigate();
+
+  // Check if payment is already complete on component mount (for return from 3D Secure)
+  useEffect(() => {
+    const checkPaymentStatus = async () => {
+      if (!stripe || !clientSecret) return;
+      
+      const { paymentIntent } = await stripe.retrievePaymentIntent(clientSecret);
+      
+      if (paymentIntent && paymentIntent.status === 'succeeded') {
+        console.log('Payment already complete, confirming with server');
+        handlePaymentSuccess(paymentIntent);
+      }
+    };
+    
+    checkPaymentStatus();
+  }, [stripe, clientSecret]);
+  
+  // Handle successful payment
+  const handlePaymentSuccess = async (paymentIntent) => {
+    console.log('Payment intent succeeded:', paymentIntent.id);
+    try {
+      const confirmResponse = await axios.post(
+        `${config.PAYMENT_SERVICE_URL}/payments/stripe/confirm`, 
+        { paymentIntentId: paymentIntent.id },
+        { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
+      );
+      console.log('Payment confirmation response:', confirmResponse.data);
+      
+      // Store orderId in localStorage before redirect
+      localStorage.setItem('pendingOrderId', orderId);
+      
+      // Navigate to processing page which will poll for order status
+      navigate(`/processing-order/${orderId}`, { replace: true });
+      
+      onSuccess(paymentIntent);
+    } catch (apiError) {
+      console.error('Error confirming payment with server:', apiError);
+      setErrorMessage('Payment succeeded but failed to confirm with server.');
+      onError(apiError.message);
+    }
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!stripe || !elements) {
-      // Stripe.js has not yet loaded.
       console.log('Stripe.js has not yet loaded');
       return;
     }
@@ -35,7 +77,7 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + '/payment/success?order_id=' + orderId,
+          return_url: window.location.origin + `/processing-order/${orderId}`,
         },
         redirect: 'if_required',
       });
@@ -46,27 +88,18 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
         setErrorMessage(error.message);
         onError(error.message);
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
-        // Payment successful - notify backend
-        console.log('Payment intent succeeded:', paymentIntent.id);
-        try {
-          const confirmResponse = await axios.post('/api/payments/stripe/confirm', {
-            paymentIntentId: paymentIntent.id
-          });
-          console.log('Payment confirmation response:', confirmResponse.data);
-          onSuccess(paymentIntent);
-        } catch (apiError) {
-          console.error('Error confirming payment with server:', apiError);
-          setErrorMessage('Payment succeeded but failed to confirm with server.');
-          onError(apiError.message);
-        }
+        // Payment successful without additional authentication - notify backend
+        await handlePaymentSuccess(paymentIntent);
+      } else if (paymentIntent && paymentIntent.status === 'requires_action') {
+        // Payment requires additional authentication
+        // We'll just show a message - stripe.confirmPayment will handle the redirect automatically
+        setErrorMessage('This payment requires additional verification. You will be redirected to complete authentication.');
+        // Store orderId in localStorage before the user is redirected
+        localStorage.setItem('pendingOrderId', orderId);
       } else {
-        // Payment requires additional action from user or is processing
+        // Other payment status
         console.log('Payment intent status:', paymentIntent?.status);
-        if (paymentIntent && paymentIntent.status === 'requires_action') {
-          setErrorMessage('This payment requires additional verification steps.');
-        } else {
-          setErrorMessage(`Payment status: ${paymentIntent?.status || 'unknown'}`);
-        }
+        setErrorMessage(`Payment status: ${paymentIntent?.status || 'unknown'}`);
       }
     } catch (err) {
       console.error('Unexpected payment error:', err);
@@ -99,7 +132,7 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
 };
 
 // Wrapper component that handles loading Stripe and the PaymentIntent
-const StripePaymentForm = ({ orderId, paymentIntentId, clientSecret, onSuccess, onError }) => {
+const StripePaymentForm = ({ orderId, clientSecret, onSuccess, onError }) => {
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {

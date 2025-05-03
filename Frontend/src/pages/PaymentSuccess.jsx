@@ -16,6 +16,7 @@ import { CheckCircle, Error, Replay } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import Navbar from '../components/Navbar';
 
 // Saga steps for visualization
 const sagaSteps = [
@@ -57,7 +58,7 @@ const PaymentSuccess = () => {
         case 'pending':
           setActiveStep(0);
           break;
-        case 'stock_validated':
+        case 'processing':
           setActiveStep(1);
           break;
         case 'payment_pending':
@@ -186,86 +187,89 @@ const PaymentSuccess = () => {
   };
   
   return (
-    <Container maxWidth="md" sx={{ py: 8 }}>
-      <Paper elevation={3} sx={{ p: 4 }}>
-        {loading ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <CircularProgress size={60} sx={{ mb: 3 }} />
-            <Typography variant="h5">Processing your payment...</Typography>
-            <Typography color="text.secondary" sx={{ mt: 2 }}>
-              Please don't close this page
-            </Typography>
-          </Box>
-        ) : success ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <CheckCircle color="success" sx={{ fontSize: 80, mb: 3 }} />
-            <Typography variant="h4" gutterBottom>
-              Payment Successful!
-            </Typography>
-            <Typography variant="body1" sx={{ mb: 4, textAlign: 'center' }}>
-              Your order has been placed and payment has been received.
-              The items will be shipped soon!
-            </Typography>
-            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-              <Button variant="contained" color="primary" onClick={handleViewOrder}>
-                View Order
-              </Button>
-              <Button variant="outlined" onClick={handleContinueShopping}>
-                Continue Shopping
-              </Button>
+    <>
+      <Navbar />
+      <Container maxWidth="md" sx={{ py: 8 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          {loading ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <CircularProgress size={60} sx={{ mb: 3 }} />
+              <Typography variant="h5">Processing your payment...</Typography>
+              <Typography color="text.secondary" sx={{ mt: 2 }}>
+                Please don't close this page
+              </Typography>
             </Box>
-          </Box>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {error ? (
-              <>
-                <Error color="error" sx={{ fontSize: 80, mb: 3 }} />
-                <Typography variant="h4" gutterBottom>
-                  Payment Failed
-                </Typography>
-                <Alert severity="error" sx={{ mb: 3, width: '100%' }}>
-                  {error || 'There was an error processing your payment. Please try again.'}
-                </Alert>
-              </>
-            ) : (
-              <>
-                <Typography variant="h5" gutterBottom>
-                  Order Processing
-                </Typography>
-                <Box sx={{ width: '100%', mb: 4 }}>
-                  <Stepper activeStep={activeStep} alternativeLabel>
-                    {sagaSteps.map((label) => (
-                      <Step key={label}>
-                        <StepLabel>{label}</StepLabel>
-                      </Step>
-                    ))}
-                  </Stepper>
-                </Box>
-                {orderStatus && (
-                  <Alert severity="info" sx={{ mb: 3, width: '100%' }}>
-                    {orderStatus.message || `Status: ${orderStatus.status}`}
+          ) : success ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <CheckCircle color="success" sx={{ fontSize: 80, mb: 3 }} />
+              <Typography variant="h4" gutterBottom>
+                Payment Successful!
+              </Typography>
+              <Typography variant="body1" sx={{ mb: 4, textAlign: 'center' }}>
+                Your order has been placed and payment has been received.
+                The items will be shipped soon!
+              </Typography>
+              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                <Button variant="contained" color="primary" onClick={handleViewOrder}>
+                  View Order
+                </Button>
+                <Button variant="outlined" onClick={handleContinueShopping}>
+                  Continue Shopping
+                </Button>
+              </Box>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {error ? (
+                <>
+                  <Error color="error" sx={{ fontSize: 80, mb: 3 }} />
+                  <Typography variant="h4" gutterBottom>
+                    Payment Failed
+                  </Typography>
+                  <Alert severity="error" sx={{ mb: 3, width: '100%' }}>
+                    {error || 'There was an error processing your payment. Please try again.'}
                   </Alert>
-                )}
-              </>
-            )}
-            
-            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-              <Button 
-                variant="contained" 
-                color="primary" 
-                onClick={handleRetry}
-                startIcon={<Replay />}
-              >
-                Try Again
-              </Button>
-              <Button variant="outlined" onClick={handleContinueShopping}>
-                Continue Shopping
-              </Button>
+                </>
+              ) : (
+                <>
+                  <Typography variant="h5" gutterBottom>
+                    Order Processing
+                  </Typography>
+                  <Box sx={{ width: '100%', mb: 4 }}>
+                    <Stepper activeStep={activeStep} alternativeLabel>
+                      {sagaSteps.map((label) => (
+                        <Step key={label}>
+                          <StepLabel>{label}</StepLabel>
+                        </Step>
+                      ))}
+                    </Stepper>
+                  </Box>
+                  {orderStatus && (
+                    <Alert severity="info" sx={{ mb: 3, width: '100%' }}>
+                      {orderStatus.message || `Status: ${orderStatus.status}`}
+                    </Alert>
+                  )}
+                </>
+              )}
+              
+              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  onClick={handleRetry}
+                  startIcon={<Replay />}
+                >
+                  Try Again
+                </Button>
+                <Button variant="outlined" onClick={handleContinueShopping}>
+                  Continue Shopping
+                </Button>
+              </Box>
             </Box>
-          </Box>
-        )}
-      </Paper>
-    </Container>
+          )}
+        </Paper>
+      </Container>
+    </>
   );
 };
 

@@ -18,20 +18,26 @@ import {
   TableRow,
   CardMedia
 } from '@mui/material';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import config from '../config';
 import Navbar from '../components/Navbar';
 import OrderStatusTracker from '../components/OrderStatusTracker';
+import { ArrowBack } from '@mui/icons-material';
+import { useBackNavigation } from '../hooks/useBackNavigation';
 
 const OrderDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = useAuth();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Use custom hook for back navigation with my-orders as the default fallback
+  const handleBack = useBackNavigation('/my-orders');
 
   useEffect(() => {
     fetchOrderDetails();
@@ -69,9 +75,7 @@ const OrderDetails = () => {
     switch (status.toLowerCase()) {
       case 'pending':
         return 'warning';
-      case 'stock_validating':
-        return 'warning';
-      case 'stock_validated': 
+      case 'processing':
         return 'info';
       case 'payment_pending':
         return 'warning';
@@ -103,6 +107,92 @@ const OrderDetails = () => {
     }
   };
 
+  // Add a function to display info about special order states
+  const getSpecialOrderMessage = (order) => {
+    if (order.status === 'failed' && order.payment?.status === 'completed') {
+      return (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          <Typography variant="subtitle2">
+            Payment received but order could not be fulfilled
+          </Typography>
+          <Typography variant="body2">
+            Your payment was successful, but the order could not be completed due to issues such as
+            product availability. Please contact customer service for assistance with a refund.
+          </Typography>
+        </Alert>
+      );
+    }
+    return null;
+  };
+
+  // Format the status display
+  const getFormattedStatus = (order) => {
+    // Special case - payment completed but order failed
+    if (order.status === 'failed' && order.payment?.status === 'completed') {
+      return (
+        <Box>
+          <Chip
+            label="Payment Received"
+            color="warning"
+            sx={{ mr: 1 }}
+          />
+          <Chip
+            label="Order Failed"
+            color="error"
+          />
+        </Box>
+      );
+    }
+    
+    // Normal case
+    return (
+      <Chip
+        label={order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+        color={getStatusColor(order.status)}
+      />
+    );
+  };
+
+  // Format payment details display
+  const getPaymentDetails = (payment, paymentMethod) => {
+    if (!payment) return null;
+    
+    return (
+      <Box sx={{ mt: 2 }}>
+        <Typography variant="subtitle2" gutterBottom>
+          Payment Information:
+        </Typography>
+        <Typography variant="body2">
+          Method: {paymentMethod || 'Cash on Delivery'}
+        </Typography>
+        {payment.paymentId && (
+          <Typography variant="body2" color="text.secondary">
+            Payment ID: {payment.paymentId}
+          </Typography>
+        )}
+        {payment.updatedAt && (
+          <Typography variant="body2" color="text.secondary">
+            Last Updated: {new Date(payment.updatedAt).toLocaleString()}
+          </Typography>
+        )}
+        
+        {/* Payment actions */}
+        {payment.paymentUrl && payment.status !== 'completed' && (
+          <Button 
+            variant="contained" 
+            color="primary"
+            href={payment.paymentUrl}
+            target="_blank"
+            sx={{ mt: 1 }}
+            size="small"
+          >
+            Complete Payment
+          </Button>
+        )}
+      </Box>
+    );
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
@@ -120,7 +210,7 @@ const OrderDetails = () => {
         <Button
           variant="contained"
           color="primary"
-          onClick={() => navigate('/my-orders')}
+          onClick={handleBack}
         >
           Back to Orders
         </Button>
@@ -137,7 +227,7 @@ const OrderDetails = () => {
         <Button
           variant="contained"
           color="primary"
-          onClick={() => navigate('/my-orders')}
+          onClick={handleBack}
         >
           Back to Orders
         </Button>
@@ -149,15 +239,16 @@ const OrderDetails = () => {
     <>
       <Navbar />
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-        <Box sx={{ mb: 4 }}>
-          <Button
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <Button 
+            startIcon={<ArrowBack />} 
+            onClick={handleBack}
             variant="outlined"
-            onClick={() => navigate('/my-orders')}
-            sx={{ mb: 2 }}
+            sx={{ mr: 2 }}
           >
-            Back to Orders
+            Back
           </Button>
-          <Typography variant="h4" gutterBottom>
+          <Typography variant="h4">
             Order Details
           </Typography>
         </Box>
@@ -175,11 +266,7 @@ const OrderDetails = () => {
                 Order Status
               </Typography>
               <Box sx={{ mb: 2 }}>
-                <Chip
-                  label={order.status}
-                  color={getStatusColor(order.status)}
-                  sx={{ mr: 1 }}
-                />
+                {getFormattedStatus(order)}
                 
                 {/* Show status history if available */}
                 {order.statusHistory && order.statusHistory.length > 0 && (
@@ -215,53 +302,7 @@ const OrderDetails = () => {
               <Typography variant="body2" color="text.secondary">
                 Date: {new Date(order.createdAt).toLocaleString()}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Payment Method: {order.paymentMethod || 'Cash on Delivery'}
-              </Typography>
-              
-              {/* Payment info */}
-              {order.payment && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Payment Details:
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="body2" sx={{ mr: 1 }}>
-                      Payment Status:
-                    </Typography>
-                    <Chip 
-                      size="small"
-                      label={order.payment.status || 'Unknown'} 
-                      color={getPaymentStatusColor(order.payment.status)} 
-                    />
-                  </Box>
-                  
-                  {order.payment.paymentId && (
-                    <Typography variant="body2" color="text.secondary">
-                      Payment ID: {order.payment.paymentId}
-                    </Typography>
-                  )}
-                  
-                  {order.payment.updatedAt && (
-                    <Typography variant="body2" color="text.secondary">
-                      Last Updated: {new Date(order.payment.updatedAt).toLocaleString()}
-                    </Typography>
-                  )}
-                  
-                  {order.payment.paymentUrl && order.payment.status !== 'completed' && (
-                    <Button 
-                      variant="contained" 
-                      color="primary"
-                      href={order.payment.paymentUrl}
-                      target="_blank"
-                      sx={{ mt: 1 }}
-                      size="small"
-                    >
-                      Complete Payment
-                    </Button>
-                  )}
-                </Box>
-              )}
+              {getPaymentDetails(order.payment, order.paymentMethod)}
             </Paper>
           </Grid>
 

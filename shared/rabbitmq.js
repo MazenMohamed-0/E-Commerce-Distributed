@@ -14,7 +14,6 @@ class RabbitMQ {
   async connect() {
     try {
       if (this.connection && this.channel) {
-        console.log('RabbitMQ connection already established');
         return;
       }
 
@@ -28,44 +27,33 @@ class RabbitMQ {
         frameMax: 8192
       };
 
-      console.log('Attempting to connect to RabbitMQ with options:', {
-        ...connectionOptions,
-        password: '***'
-      });
-
       this.connection = await amqp.connect(connectionOptions);
       this.channel = await this.connection.createChannel();
-      console.log('Connected to RabbitMQ');
 
       // Reset reconnect attempts on successful connection
       this.reconnectAttempts = 0;
 
       // Handle connection errors
       this.connection.on('error', async (err) => {
-        console.error('RabbitMQ connection error:', err);
         await this.handleConnectionFailure();
       });
 
       // Handle connection close
       this.connection.on('close', async () => {
-        console.log('RabbitMQ connection closed');
         await this.handleConnectionFailure();
       });
 
       // Handle channel errors
       this.channel.on('error', async (err) => {
-        console.error('RabbitMQ channel error:', err);
         await this.handleChannelFailure();
       });
 
       // Handle channel close
       this.channel.on('close', async () => {
-        console.log('RabbitMQ channel closed');
         await this.handleChannelFailure();
       });
 
     } catch (error) {
-      console.error('Error connecting to RabbitMQ:', error);
       await this.handleConnectionFailure();
     }
   }
@@ -79,7 +67,6 @@ class RabbitMQ {
   async handleChannelFailure() {
     try {
       if (this.connection && !this.channel) {
-        console.log('Attempting to recreate channel...');
         this.channel = await this.connection.createChannel();
         
         // Reassert exchanges and queues
@@ -95,26 +82,22 @@ class RabbitMQ {
         await this.handleConnectionFailure();
       }
     } catch (error) {
-      console.error('Error recreating channel:', error);
       await this.handleConnectionFailure();
     }
   }
 
   async reconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnect attempts reached. Giving up.');
       throw new Error('Failed to reconnect to RabbitMQ after max attempts');
     }
 
     this.reconnectAttempts += 1;
-    console.log(`Reconnecting to RabbitMQ (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
 
     await new Promise((resolve) => setTimeout(resolve, this.reconnectInterval));
 
     try {
       await this.connect();
     } catch (error) {
-      console.error('Reconnection attempt failed:', error);
       await this.reconnect();
     }
   }
@@ -131,9 +114,7 @@ class RabbitMQ {
       await this.channel.assertExchange(exchange, 'topic', exchangeConfig);
       
       this.channel.publish(exchange, routingKey, Buffer.from(JSON.stringify(message)));
-      console.log(`Published message to exchange ${exchange} with routing key ${routingKey}`);
     } catch (error) {
-      console.error('Error publishing message:', error);
       throw error;
     }
   }
@@ -153,12 +134,6 @@ class RabbitMQ {
           queueName.includes('payment-result') || 
           /response\.[0-9]+/.test(queueName));
       
-      console.log(`Asserting queue ${queueName} with durable=${isDurable}`);
-      await this.channel.assertQueue(queueName, { 
-        durable: isDurable,
-        autoDelete: !isDurable
-      });
-      
       // Send the message to the queue with persistent delivery mode for important messages
       const options = {
         persistent: isDurable  // Use persistent delivery mode for durable queues
@@ -171,19 +146,15 @@ class RabbitMQ {
       );
       
       if (success) {
-        console.log(`Successfully published message to queue ${queueName}`);
+        return true;
       } else {
-        console.warn(`Channel write buffer is full - applying backpressure on queue ${queueName}`);
         // Wait for drain event before considering the operation complete
         await new Promise(resolve => {
           this.channel.once('drain', resolve);
         });
-        console.log(`Channel drained, message to ${queueName} should now be sent`);
+        return true;
       }
-      
-      return true;
     } catch (error) {
-      console.error(`Error publishing to queue ${queueName}:`, error);
       throw error;
     }
   }
@@ -207,8 +178,6 @@ class RabbitMQ {
       const q = await this.channel.assertQueue(queue, queueOptions);
       await this.channel.bindQueue(q.queue, exchange, routingKey);
 
-      console.log(`Subscribed to queue ${q.queue} on exchange ${exchange} with routing key ${routingKey}`);
-
       const { consumerTag } = await this.channel.consume(q.queue, (msg) => {
         if (msg) {
           try {
@@ -216,7 +185,6 @@ class RabbitMQ {
             callback(content);
             this.channel.ack(msg);
           } catch (error) {
-            console.error('Error processing message:', error);
             this.channel.nack(msg);
           }
         }
@@ -233,7 +201,6 @@ class RabbitMQ {
 
       return q.queue;
     } catch (error) {
-      console.error('Error subscribing to queue:', error);
       throw error;
     }
   }
@@ -243,14 +210,12 @@ class RabbitMQ {
       const { exchange, routingKey, callback, options } = consumer;
       await this.subscribe(exchange, queue, routingKey, callback, options);
     } catch (error) {
-      console.error(`Error resubscribing consumer for queue ${queue}:`, error);
     }
   }
 
   async unsubscribe(queue) {
     try {
       if (!this.channel) {
-        console.warn('No channel available for unsubscribe operation');
         return;
       }
 
@@ -259,27 +224,21 @@ class RabbitMQ {
         try {
           await this.channel.cancel(consumer.consumerTag);
         } catch (error) {
-          console.warn(`Error canceling consumer for queue ${queue}:`, error);
         }
 
         try {
           await this.channel.deleteQueue(queue);
         } catch (error) {
-          console.warn(`Error deleting queue ${queue}:`, error);
         }
 
         this.consumers.delete(queue);
-        console.log(`Unsubscribed from queue ${queue}`);
       }
     } catch (error) {
-      console.error(`Error unsubscribing from queue ${queue}:`, error);
     }
   }
 
   async createTemporaryResponseQueue(exchange, correlationId, callback) {
     try {
-      console.log(`Creating temporary response queue for correlationId: ${correlationId}`);
-      
       // Generate a unique queue name for this response
       const queueName = `response-${correlationId}`;
       const routingKey = `response.${correlationId}`;
@@ -301,29 +260,21 @@ class RabbitMQ {
         durable: false     // Non-durable since it's temporary
       };
       
-      console.log(`Asserting temporary queue ${queueName} with options:`, queueOptions);
       const q = await this.channel.assertQueue(queueName, queueOptions);
       
       // Bind the queue to the specific routing key
       await this.channel.bindQueue(q.queue, exchange, routingKey);
-      console.log(`Bound queue ${q.queue} to exchange ${exchange} with routing key ${routingKey}`);
       
       // Set up the consumer for this queue
       const { consumerTag } = await this.channel.consume(q.queue, (msg) => {
         if (msg) {
           try {
             const content = JSON.parse(msg.content.toString());
-            console.log(`Received response on temporary queue ${queueName}:`, {
-              correlationId: content.correlationId,
-              success: content.data?.success,
-              type: content.type
-            });
             
             // Invoke the callback with the message content
             callback(content);
             this.channel.ack(msg);
           } catch (error) {
-            console.error(`Error processing message on queue ${queueName}:`, error);
             this.channel.nack(msg);
           }
         }
@@ -338,10 +289,8 @@ class RabbitMQ {
         options: { temporary: true }
       });
       
-      console.log(`Successfully created temporary response queue: ${queueName}`);
       return queueName;
     } catch (error) {
-      console.error('Error creating temporary response queue:', error);
       throw error;
     }
   }
@@ -361,9 +310,7 @@ class RabbitMQ {
         await this.connection.close();
         this.connection = null;
       }
-      console.log('RabbitMQ connection closed gracefully');
     } catch (error) {
-      console.error('Error closing RabbitMQ connection:', error);
     }
   }
 }

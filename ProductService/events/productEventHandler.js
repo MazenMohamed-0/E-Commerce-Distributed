@@ -1,10 +1,11 @@
 const rabbitmq = require('../../shared/rabbitmq');
 const eventTypes = require('../../shared/eventTypes');
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const jwt = require('jsonwebtoken');
-const winston = require('winston');
-const mongoose = require('mongoose');
 
+// Configure event logger
+const winston = require('winston');
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.json(),
@@ -28,13 +29,7 @@ class ProductEventHandler {
       ];
 
       // Log all subscriptions
-      console.log('\nProduct Service Subscriptions:');
-      console.log('------------------------');
       for (const sub of subscriptions) {
-        console.log(`Exchange: ${sub.exchange}`);
-        console.log(`Queue: ${sub.queue}`);
-        console.log(`Routing Key: ${sub.routingKey}`);
-        console.log('------------------------');
         await rabbitmq.subscribe(sub.exchange, sub.queue, sub.routingKey, this.handleProductEvent.bind(this));
       }
 
@@ -54,6 +49,14 @@ class ProductEventHandler {
         this.handleProductValidationRequest.bind(this)
       );
 
+      // Subscribe to order completed events to reduce stock
+      await rabbitmq.subscribe(
+        'order-events',
+        'product-service-order-completed',
+        eventTypes.ORDER_COMPLETED,
+        this.handleOrderCompleted.bind(this)
+      );
+
       logger.info('Product service event handlers initialized');
     } catch (error) {
       logger.error('Error initializing event handlers:', error);
@@ -64,11 +67,6 @@ class ProductEventHandler {
   async handleProductEvent(event) {
     try {
       const { type, data } = event;
-      console.log('\nProduct Service Received Event:');
-      console.log('------------------------');
-      console.log(`Type: ${type}`);
-      console.log(`Data:`, data);
-      console.log('------------------------');
 
       switch (type) {
         case eventTypes.PRODUCT_CREATED:
@@ -93,12 +91,6 @@ class ProductEventHandler {
   async publishProductEvent(type, data) {
     try {
       const exchange = 'product-events';
-      console.log('\nProduct Service Publishing Event:');
-      console.log('------------------------');
-      console.log(`Exchange: ${exchange}`);
-      console.log(`Type: ${type}`);
-      console.log(`Data:`, data);
-      console.log('------------------------');
       
       await rabbitmq.publish(exchange, type, { type, data });
       logger.info(`Published product event: ${type}`);
@@ -167,7 +159,6 @@ class ProductEventHandler {
 
   async handleProductDetailsRequest(message) {
     try {
-      console.log('Received product details request:', message);
       const { productId, replyTo } = message.data;
       
       if (!productId) {
@@ -178,7 +169,6 @@ class ProductEventHandler {
       const product = await Product.findById(productId);
       
       if (!product) {
-        console.log(`Product not found: ${productId}`);
         await rabbitmq.publish('product-events', replyTo, {
           type: 'product.details.response',
           correlationId: message.correlationId,
@@ -190,7 +180,6 @@ class ProductEventHandler {
         return;
       }
 
-      console.log('Found product:', product);
       // Send product details back
       await rabbitmq.publish('product-events', replyTo, {
         type: 'product.details.response',
@@ -225,8 +214,6 @@ class ProductEventHandler {
 
   async handleProductValidationRequest(message) {
     try {
-      console.log('Received validation request:', message);
-      
       // Ensure message has the correct structure
       if (!message || !message.data || !Array.isArray(message.data.products)) {
         throw new Error('Invalid message format: products array is required');
@@ -234,8 +221,6 @@ class ProductEventHandler {
 
       const { correlationId, data } = message;
       const { products, replyTo } = data;
-
-      console.log('Validating products:', JSON.stringify(products));
 
       try {
         // First phase: Just validate products without modifying stock
@@ -254,7 +239,6 @@ class ProductEventHandler {
             try {
               // Check if the productId is a valid ObjectId
               if (!mongoose.Types.ObjectId.isValid(item.productId)) {
-                console.log(`Invalid product ID format: ${item.productId}`);
                 return {
                   productId: item.productId,
                   isValid: false,
@@ -268,7 +252,6 @@ class ProductEventHandler {
               const product = await Product.findById(item.productId);
               
               if (!product) {
-                console.log(`Product not found: ${item.productId}`);
                 return {
                   productId: item.productId,
                   isValid: false,
@@ -281,7 +264,6 @@ class ProductEventHandler {
 
               // Check if there's enough stock
               const hasEnoughStock = product.stock >= item.quantity;
-              console.log(`Product ${item.productId} (${product.name}): available stock=${product.stock}, requested=${item.quantity}, has enough=${hasEnoughStock}`);
               
               return {
                 productId: item.productId,
@@ -297,7 +279,6 @@ class ProductEventHandler {
                 }
               };
             } catch (error) {
-              console.error(`Error validating product ${item.productId}:`, error);
               return {
                 productId: item.productId,
                 isValid: false,
@@ -308,15 +289,6 @@ class ProductEventHandler {
             }
           })
         );
-
-        // Log detailed validation results for each product
-        console.log('Detailed validation results:');
-        validationResults.forEach(result => {
-          console.log(`- Product ${result.productId}: Valid=${result.isValid}, HasStock=${result.hasStock}, Stock=${result.currentStock}`);
-          if (!result.isValid || !result.hasStock) {
-            console.log(`  Error: ${result.error}`);
-          }
-        });
 
         // Check if all products are valid and have sufficient stock
         const allProductsValid = validationResults.every(result => result.isValid && result.hasStock);
@@ -332,8 +304,6 @@ class ProductEventHandler {
               'Some products are invalid or out of stock'
           }
         };
-
-        console.log('Sending validation response:', JSON.stringify(response.data));
 
         // Send validation response
         await rabbitmq.publish('product-events', replyTo, response);
@@ -359,10 +329,199 @@ class ProductEventHandler {
         }
       };
 
-      console.log('Sending error response:', errorResponse);
-      
       if (message?.data?.replyTo) {
         await rabbitmq.publish('product-events', message.data.replyTo, errorResponse);
+      }
+    }
+  }
+
+  // Handle order completed event to reduce stock
+  async handleOrderCompleted(event) {
+    try {
+      logger.info('Received order completed event', { 
+        orderId: event.data.orderId 
+      });
+      
+      // We need to get the order details to know what products and quantities were ordered
+      const orderId = event.data.orderId;
+      
+      if (!orderId) {
+        logger.error('Order completed event missing orderId', { event });
+        return;
+      }
+      
+      // Request order details from the Order service
+      const orderDetails = await this.requestOrderDetails(orderId);
+      
+      if (!orderDetails || !Array.isArray(orderDetails.items) || orderDetails.items.length === 0) {
+        logger.error('Failed to get valid order details', { orderId });
+        return;
+      }
+      
+      // Only reduce stock if the order status is exactly "completed"
+      if (orderDetails.status !== 'completed') {
+        logger.warn('Skipping stock reduction because order status is not completed', {
+          orderId,
+          status: orderDetails.status
+        });
+        return;
+      }
+      
+      logger.info('Processing stock reduction for order', {
+        orderId,
+        itemCount: orderDetails.items.length,
+        status: orderDetails.status
+      });
+      
+      // Process each item and reduce stock
+      const productService = require('../services/productService');
+      const stockUpdateResults = await Promise.all(
+        orderDetails.items.map(async (item) => {
+          try {
+            // Find the product
+            const product = await Product.findById(item.productId);
+            
+            if (!product) {
+              logger.error('Product not found for stock reduction', { 
+                productId: item.productId,
+                orderId 
+              });
+              return {
+                productId: item.productId,
+                success: false,
+                error: 'Product not found'
+              };
+            }
+            
+            // Calculate new stock level
+            const newStock = Math.max(0, product.stock - item.quantity);
+            
+            // Update the stock
+            await productService.updateStock(item.productId, newStock);
+            
+            logger.info('Stock reduced for product', {
+              productId: item.productId,
+              previousStock: product.stock,
+              newStock,
+              reduction: item.quantity
+            });
+            
+            return {
+              productId: item.productId,
+              success: true,
+              previousStock: product.stock,
+              newStock,
+              reduction: item.quantity
+            };
+          } catch (error) {
+            logger.error('Error reducing stock for product', {
+              productId: item.productId,
+              orderId,
+              error: error.message
+            });
+            
+            return {
+              productId: item.productId,
+              success: false,
+              error: error.message
+            };
+          }
+        })
+      );
+      
+      logger.info('Stock reduction completed for order', {
+        orderId,
+        results: stockUpdateResults
+      });
+    } catch (error) {
+      logger.error('Error handling order completed event', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  }
+  
+  // Helper method to request order details from Order service
+  async requestOrderDetails(orderId) {
+    try {
+      logger.info('Requesting order details', { orderId });
+      
+      // Generate a correlation ID for this request
+      const correlationId = Date.now().toString();
+      
+      // Create a promise that will be resolved when we receive the response
+      const detailsPromise = new Promise(async (resolve, reject) => {
+        let queueName;
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Order details request timeout'));
+        }, 5000); // 5 seconds timeout
+        
+        try {
+          // Create a temporary response queue
+          queueName = await rabbitmq.createTemporaryResponseQueue(
+            'order-events',
+            correlationId,
+            (message) => {
+              if (message.correlationId === correlationId) {
+                clearTimeout(timeoutId);
+                resolve(message.data);
+              }
+            }
+          );
+          
+          // Publish the order details request
+          await rabbitmq.publish('order-events', 'order.details.request', {
+            type: 'order.details.request',
+            correlationId,
+            data: {
+              orderId,
+              replyTo: `response.${correlationId}`
+            }
+          });
+          
+          logger.info('Order details request sent', { correlationId, orderId });
+        } catch (error) {
+          clearTimeout(timeoutId);
+          reject(error);
+        } finally {
+          // Cleanup function
+          if (queueName) {
+            setTimeout(async () => {
+              try {
+                await rabbitmq.unsubscribe(queueName);
+              } catch (error) {
+                console.error('Error cleaning up temporary queue:', error);
+              }
+            }, 1000);
+          }
+        }
+      });
+      
+      return await detailsPromise;
+    } catch (error) {
+      logger.error('Error requesting order details', {
+        orderId,
+        error: error.message
+      });
+      
+      // If request fails, try to get the order details from a direct API call
+      try {
+        // This is a fallback mechanism - in a real system, you might use HTTP calls here
+        logger.info('Attempting fallback for order details');
+        
+        // In this case, we're mocking a response as there's no direct HTTP client set up
+        return {
+          orderId,
+          items: [], // Empty array will prevent any stock updates
+          error: 'Failed to get order details via event, and no fallback implemented'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback for order details also failed', {
+          orderId,
+          error: fallbackError.message
+        });
+        
+        return null;
       }
     }
   }

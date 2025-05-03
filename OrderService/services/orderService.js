@@ -3,6 +3,7 @@ const Order = require('../models/Order');
 const orderEventHandler = require('../events/orderEventHandler');
 const winston = require('winston');
 const rabbitmq = require('../../shared/rabbitmq');
+const axios = require('axios');
 
 const logger = winston.createLogger({
     level: 'info',
@@ -148,79 +149,231 @@ class OrderService {
 
             console.log('Requesting product validation for items:', itemsForValidation);
 
+            // Simple check for product availability and stock via RabbitMQ
             const validationResult = await orderEventHandler.requestProductValidation(itemsForValidation);
             
-            if (!validationResult || !validationResult.validationResults) {
-                throw new Error('Invalid validation response received from product service');
+            if (!validationResult || !validationResult.isValid) {
+                throw new Error('Order validation failed: Products unavailable or insufficient stock');
             }
 
-            if (!validationResult.isValid) {
-                // Get details of invalid products
-                const invalidProducts = validationResult.validationResults
-                    .filter(result => !result.isValid || !result.hasStock)
-                    .map(result => ({
-                        productId: result.productId,
-                        reason: !result.isValid ? 'Product not found' : 'Insufficient stock',
-                        currentStock: result.currentStock,
-                        requestedQuantity: cartData.items.find(item => item.productId === result.productId)?.quantity || 0
-                    }));
-
-                const errorMessage = `Order validation failed: ${validationResult.message}\n` +
-                    `Invalid products:\n${invalidProducts.map(p => 
-                        `- Product ${p.productId}: ${p.reason}. ` +
-                        `Available stock: ${p.currentStock}, Requested: ${p.requestedQuantity}`
-                    ).join('\n')}`;
-
-                throw new Error(errorMessage);
-            }
-
-            // Update cart items with current prices and seller IDs from validation results
+            // Update cart items with current prices from validation results
             const updatedItems = cartData.items.map(item => {
                 const validationItem = validationResult.validationResults
                     .find(v => v.productId === item.productId);
                 
-                if (!validationItem.productDetails) {
-                    throw new Error(`Product details not found for product: ${item.productId}`);
-                }
-
                 return {
                     productId: item.productId,
-                    sellerId: validationItem.productDetails.sellerId,
+                    sellerId: validationItem.productDetails?.sellerId || item.sellerId,
                     quantity: item.quantity,
-                    price: validationItem.productDetails.price,
-                    currentStock: validationItem.currentStock,
-                    previousStock: validationItem.previousStock
+                    price: validationItem.productDetails?.price || item.price,
+                    productName: item.productName
                 };
             });
 
-            // Calculate total amount using validated prices
+            // Calculate total amount
             const totalAmount = updatedItems.reduce((total, item) => total + (item.price * item.quantity), 0);
 
-            // Create order in processing state
+            // Create order
             const order = new Order({
                 userId,
                 items: updatedItems,
                 totalAmount,
                 status: 'processing',
-                paymentStatus: 'pending',
                 shippingAddress: cartData.shippingAddress,
-                paymentMethod: cartData.paymentType || 'cash'
+                paymentMethod: cartData.paymentMethod || 'cash'
             });
 
             await order.save();
+            
+            // Handle payment method-specific logic
+            if (order.paymentMethod === 'stripe') {
+                // For Stripe payment, create payment intent
+                try {
+                    const payment = await this.createStripePayment(order);
+                    order.payment = payment;
+                    await order.save();
+                } catch (paymentError) {
+                    // Log the error but don't automatically switch to cash payment
+                    logger.error('Stripe payment creation failed:', paymentError);
+                    
+                    // Mark the order as failed
+                    order.status = 'failed';
+                    order.error = {
+                        message: `Payment creation failed: ${paymentError.message}`,
+                        step: 'payment_creation',
+                        timestamp: new Date()
+                    };
+                    await order.save();
+                    
+                    // Re-throw the error to be handled by the caller
+                    throw new Error(`Failed to create payment: ${paymentError.message}`);
+                }
+            } else if (order.paymentMethod === 'cash') {
+                // For cash payment, mark as completed immediately
+                order.status = 'completed';
+                await order.save();
                 
-            // Publish ORDER_CREATED event to start the SAGA
-            await orderEventHandler.publishOrderEvent('ORDER_CREATED', {
-                orderId: order._id,
-                userId,
-                items: updatedItems
-            });
+                // Notify product service about the completed order
+                await orderEventHandler.publishOrderEvent('ORDER_COMPLETED', {
+                    orderId: order._id,
+                    userId,
+                    items: updatedItems
+                });
+            }
 
             logger.info(`Order created: ${order._id}`);
             return order;
         } catch (error) {
             logger.error('Error creating order:', error);
             throw error;
+        }
+    }
+
+    // Helper method to create Stripe payment
+    async createStripePayment(order) {
+        try {
+            // Request Stripe payment via RabbitMQ
+            const correlationId = `payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            logger.info('Starting Stripe payment creation', {
+                orderId: order._id,
+                correlationId,
+                amount: order.totalAmount
+            });
+            
+            try {
+                const paymentResponse = await new Promise(async (resolve, reject) => {
+                    const timeoutId = setTimeout(() => {
+                        logger.error('Payment request timed out', {
+                            orderId: order._id,
+                            correlationId
+                        });
+                        reject(new Error('Payment request timed out'));
+                    }, 30000); // Increase from 10000 to 30000 (30 seconds)
+
+                    try {
+                        logger.info('Creating temporary response queue', {
+                            exchange: 'payment-events',
+                            correlationId
+                        });
+                        
+                        const queueName = await rabbitmq.createTemporaryResponseQueue(
+                            'payment-events',
+                            correlationId,
+                            (message) => {
+                                logger.info('Received response on temporary queue', {
+                                    correlationId,
+                                    hasError: !!message.data.error,
+                                    hasClientSecret: !!message.data.stripeClientSecret
+                                });
+                                
+                                clearTimeout(timeoutId);
+                                if (message.data.error) {
+                                    reject(new Error(message.data.error));
+                                } else {
+                                    resolve(message.data);
+                                }
+                            }
+                        );
+                        
+                        logger.info('Publishing payment.create.request', {
+                            orderId: order._id,
+                            correlationId,
+                            queueName,
+                            replyTo: `response.${correlationId}`
+                        });
+
+                        await rabbitmq.publish('payment-events', 'payment.create.request', {
+                            type: 'payment.create.request',
+                            correlationId,
+                            data: {
+                                orderId: order._id,
+                                userId: order.userId,
+                                amount: order.totalAmount,
+                                paymentMethod: 'stripe',
+                                replyTo: `response.${correlationId}`
+                            }
+                        });
+                        
+                        logger.info('Successfully published payment.create.request', {
+                            orderId: order._id,
+                            correlationId
+                        });
+                    } catch (error) {
+                        logger.error('Error in payment request process', {
+                            orderId: order._id,
+                            correlationId,
+                            error: error.message,
+                            stack: error.stack
+                        });
+                        clearTimeout(timeoutId);
+                        reject(error);
+                    }
+                });
+                
+                logger.info('Received payment response', {
+                    orderId: order._id,
+                    hasClientSecret: !!paymentResponse.stripeClientSecret,
+                    hasPaymentIntentId: !!paymentResponse.stripePaymentIntentId
+                });
+
+                return {
+                    status: 'pending',
+                    stripeClientSecret: paymentResponse.stripeClientSecret,
+                    stripePaymentIntentId: paymentResponse.stripePaymentIntentId
+                };
+            } catch (mqError) {
+                // If RabbitMQ communication fails, try direct HTTP call to payment service
+                logger.warn('RabbitMQ communication failed, falling back to direct HTTP call', {
+                    orderId: order._id,
+                    error: mqError.message
+                });
+                
+                // Get the payment service URL from environment or use default
+                const paymentServiceUrl = process.env.PAYMENT_SERVICE_URL || 'http://localhost:3005';
+                
+                try {
+                    logger.info('Making direct HTTP call to payment service', {
+                        url: `${paymentServiceUrl}/payments/test-stripe`,
+                        orderId: order._id
+                    });
+                    
+                    const response = await axios.post(
+                        `${paymentServiceUrl}/payments/test-stripe`,
+                        {
+                            orderId: order._id,
+                            userId: order.userId,
+                            amount: order.totalAmount
+                        }
+                    );
+                    
+                    logger.info('Direct HTTP call successful', {
+                        orderId: order._id,
+                        paymentId: response.data.payment.paymentId,
+                        hasClientSecret: !!response.data.payment.stripeClientSecret
+                    });
+                    
+                    return {
+                        status: 'pending',
+                        stripeClientSecret: response.data.payment.stripeClientSecret,
+                        stripePaymentIntentId: response.data.payment.stripePaymentIntentId
+                    };
+                } catch (httpError) {
+                    logger.error('Direct HTTP call to payment service failed', {
+                        orderId: order._id,
+                        error: httpError.message,
+                        response: httpError.response?.data
+                    });
+                    
+                    throw new Error(`Both RabbitMQ and HTTP payment methods failed: ${httpError.message}`);
+                }
+            }
+        } catch (error) {
+            logger.error('Error creating Stripe payment:', {
+                orderId: order._id,
+                error: error.message,
+                stack: error.stack
+            });
+            throw new Error(`Failed to create payment: ${error.message}`);
         }
     }
 
@@ -270,7 +423,7 @@ class OrderService {
 
             logger.info(`Order completed: ${orderId}`);
             return order;
-                } catch (error) {
+        } catch (error) {
             logger.error('Error completing order:', error);
             throw error;
         }
@@ -386,18 +539,18 @@ class OrderService {
                 throw new Error('Order not found');
             }
 
-            // Update payment status
-            order.paymentStatus = 'PAID';
+            // Update order status to completed
+            order.status = 'completed';
             await order.save();
 
-            // Publish ORDER_CONFIRMED event
-            await orderEventHandler.publishOrderEvent('ORDER_CONFIRMED', {
+            // Publish ORDER_COMPLETED event to trigger stock reduction
+            await orderEventHandler.publishOrderEvent('ORDER_COMPLETED', {
                 orderId,
                 userId: order.userId,
                 items: order.items
             });
 
-            logger.info(`Payment completed for order: ${orderId}`);
+            logger.info(`Payment completed and order processed for order: ${orderId}`);
             return order;
         } catch (error) {
             logger.error('Error handling payment completion:', error);
@@ -412,19 +565,19 @@ class OrderService {
                 throw new Error('Order not found');
             }
 
-            // Update payment status
-            order.paymentStatus = 'FAILED';
-            order.failureReason = reason;
+            // Update order status to failed
+            order.status = 'failed';
+            order.failureReason = reason || 'Payment failed';
             await order.save();
 
             // Publish ORDER_FAILED event
             await orderEventHandler.publishOrderEvent('ORDER_FAILED', {
                 orderId,
                 userId: order.userId,
-                reason
+                reason: reason || 'Payment failed'
             });
 
-            logger.info(`Payment failed for order: ${orderId}`);
+            logger.info(`Order failed due to payment failure: ${orderId}`);
             return order;
         } catch (error) {
             logger.error('Error handling payment failure:', error);

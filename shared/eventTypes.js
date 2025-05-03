@@ -24,5 +24,10 @@ module.exports = {
   // Payment events
   PAYMENT_REQUEST: 'PAYMENT_REQUEST',
   PAYMENT_EXECUTE: 'PAYMENT_EXECUTE',
-  PAYMENT_RESULT: 'PAYMENT_RESULT',
+  PAYMENT_RESULT: 'payment.result',
+  PAYMENT_CREATED: 'payment.created',
+  PAYMENT_COMPLETED: 'payment.completed',
+  PAYMENT_FAILED: 'payment.failed',
+  PAYMENT_CANCELLED: 'payment.cancelled',
+  PAYMENT_STATUS_CHECK: 'payment.status.check',
 }; 

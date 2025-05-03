@@ -26,12 +26,29 @@ class OrderEventHandler {
       // Subscribe to user events
       await rabbitmq.subscribe('user-events', 'order-service-user-queue', 'user.#', this.handleUserEvent.bind(this));
 
-      // Add subscription for payment status updates
+      // IMPORTANT: Consistent queue names for payment events
+      // Use the same queue name that payment service publishes to
       await rabbitmq.subscribe(
         'payment-events', 
-        'order-service-payment-status-queue', 
-        'payment.status', 
+        'order-service-payment-queue', 
+        'payment.#', 
+        this.handlePaymentEvent.bind(this)
+      );
+      
+      // Add specific subscription for payment result events using the exact routing key from PaymentService
+      await rabbitmq.subscribe(
+        'payment-events', 
+        'order-service-payment-result-queue', 
+        eventTypes.PAYMENT_RESULT, 
         this.handlePaymentStatusUpdate.bind(this)
+      );
+      
+      // Add subscription for order details requests
+      await rabbitmq.subscribe(
+        'order-events', 
+        'order-service-details-request-queue', 
+        'order.details.request', 
+        this.handleOrderDetailsRequest.bind(this)
       );
 
       logger.info('Order service event handlers initialized');
@@ -96,88 +113,233 @@ class OrderEventHandler {
     }
   }
 
+  async handlePaymentEvent(event) {
+    try {
+      const { type, data } = event;
+      
+      logger.info(`Received payment event: ${type}`, { eventData: JSON.stringify(data) });
+      
+      // Route the event based on type
+      switch (type) {
+        case 'payment.created':
+          logger.info(`Payment created for order ${data.orderId}`);
+          return this.handlePaymentCreated(data);
+          
+        case 'payment.status':
+        case eventTypes.PAYMENT_RESULT:
+          logger.info(`Payment status update for order ${data.orderId}`);
+          return this.handlePaymentStatusUpdate(event);
+          
+        case 'payment.cancelled':
+          logger.info(`Payment cancelled for order ${data.orderId}`);
+          return this.handlePaymentCancelled(data);
+          
+        default:
+          logger.info(`Unhandled payment event type: ${type}`);
+      }
+    } catch (error) {
+      logger.error('Error processing payment event:', error);
+      throw error;
+    }
+  }
+
+  async handlePaymentCreated(data) {
+    try {
+      if (!data.orderId) {
+        throw new Error('Payment event missing orderId');
+      }
+      
+      // Get the order
+      const order = await Order.findById(data.orderId);
+      if (!order) {
+        logger.error('Order not found for payment event', { orderId: data.orderId });
+        return;
+      }
+      
+      // Update order with payment information
+      order.payment = {
+        ...order.payment,
+        paymentId: data.paymentId,
+        method: data.paymentMethod || 'stripe',
+        status: 'pending'
+      };
+      
+      // For cash payments, we can consider them completed right away
+      if (data.paymentMethod === 'cash') {
+        order.payment.status = 'completed';
+        if (order.status === 'processing') {
+          order.status = 'completed';
+        }
+      }
+      
+      await order.save();
+      logger.info(`Order updated with payment created info for ${data.orderId}`);
+      
+      return order;
+    } catch (error) {
+      logger.error('Error handling payment created event:', error);
+      throw error;
+    }
+  }
+
   async handlePaymentStatusUpdate(event) {
     try {
-      const { orderId, paymentId, status, error, timestamp } = event.data;
+      // Extract all possible data fields
+      const { orderId, paymentId, status, error, timestamp, success, stripePaymentIntentId } = event.data;
       
-      logger.info('Received payment status update', { orderId, paymentId, status });
+      logger.info('Received payment event', { 
+        orderId, 
+        paymentId,
+        status,
+        success: !!success,
+        eventType: event.type,
+        messageData: JSON.stringify(event.data)
+      });
       
       if (!orderId) {
-        logger.error('Payment status update missing orderId', { event });
+        logger.error('Payment event missing orderId', { event });
         return;
       }
       
       // Get the order
       const order = await Order.findById(orderId);
       if (!order) {
-        logger.error('Order not found for payment status update', { orderId });
+        logger.error('Order not found for payment event', { orderId });
         return;
       }
+      
+      // Log current order state before update
+      logger.info('Current order state before payment update', {
+        orderId: order._id,
+        status: order.status,
+        paymentStatus: order.payment ? order.payment.status : 'none'
+      });
       
       // Create payment data object from event
       const paymentData = {
         status,
         paymentId,
-        updatedAt: timestamp ? new Date(timestamp) : new Date(),
-        error
+        updatedAt: timestamp || new Date(),
+        stripePaymentIntentId,
+        error: error
       };
       
-      // If we have Stripe payment data, add it
-      if (event.data.stripePaymentIntentId) {
-        paymentData.stripePaymentIntentId = event.data.stripePaymentIntentId;
+      // Check if success is explicitly defined
+      if (success !== undefined) {
+        paymentData.status = success ? 'completed' : 'failed';
+      }
+      
+      // Check for special case where payment is successful but order is failed
+      const willCompletePayment = paymentData.status === 'completed' || success === true;
+      const isOrderFailed = order.status === 'failed';
+      
+      if (willCompletePayment && isOrderFailed) {
+        logger.warn('Payment successful but order already failed. Will mark payment as completed but keep order failed.', {
+          orderId: order._id.toString(),
+          orderStatus: order.status,
+          paymentStatus: paymentData.status
+        });
+        
+        // Publish a special event for this case
+        await this.publishOrderEvent('PAYMENT_COMPLETED_FOR_FAILED_ORDER', {
+          orderId: order._id.toString(),
+          userId: order.userId,
+          reason: order.error?.message || 'Unknown error during order processing',
+          paymentId: paymentData.paymentId,
+          stripePaymentIntentId: paymentData.stripePaymentIntentId,
+          timestamp: new Date()
+        });
       }
       
       // Update the order with payment info
+      const previousStatus = order.status;
       order.updatePaymentInfo(paymentData);
       
-      // For completed payments, update order status
-      if (status === 'completed' && order.status === 'payment_pending') {
-        order.status = 'payment_completed';
-        
-        // If all other steps are complete, mark order as completed
-        if (order.status === 'payment_completed') {
-          // Additional checks could be done here
-          order.status = 'completed';
-        }
-      } else if (status === 'failed') {
-        // Failed payments should cause the order to fail
-        order.status = 'failed';
-        order.error = {
-          message: error || 'Payment failed',
-          step: 'payment',
-          timestamp: new Date()
-        };
-      }
-      
+      // Save the updated order
       await order.save();
       
-      // Publish appropriate order event based on new status
-      if (order.status === 'completed') {
-        await this.publishOrderEvent(eventTypes.ORDER_COMPLETED, {
+      logger.info('Order updated with payment info', {
+        orderId: order._id,
+        previousStatus,
+        newStatus: order.status,
+        previousPaymentStatus: order.payment ? order.payment.status : 'none',
+        newPaymentStatus: paymentData.status,
+        paymentWasSuccessful: paymentData.status === 'completed',
+        orderWasCompleted: order.status === 'completed'
+      });
+      
+      // If the order is now completed, publish an ORDER_COMPLETED event
+      if (order.status === 'completed' && previousStatus !== 'completed') {
+        logger.info('Publishing ORDER_COMPLETED event after payment completion', {
           orderId: order._id,
           userId: order.userId
         });
-      } else if (order.status === 'failed') {
-        await this.publishOrderEvent(eventTypes.ORDER_FAILED, {
-          orderId: order._id,
+        
+        // Publish the ORDER_COMPLETED event
+        await this.publishOrderEvent(eventTypes.ORDER_COMPLETED, {
+          orderId: order._id.toString(),
           userId: order.userId,
-          reason: error || 'Payment failed'
+          status: order.status,
+          paymentStatus: order.payment ? order.payment.status : null,
+          completedAt: new Date()
         });
       }
+      
+      // If there was a correlationId and replyTo in the event, send a response
+      if (event.correlationId && event.replyTo) {
+        try {
+          logger.info('Sending payment status update response', {
+            correlationId: event.correlationId,
+            replyTo: event.replyTo,
+            orderId: order._id.toString(),
+            status: order.status
+          });
+          
+          await rabbitmq.publish('payment-events', event.replyTo, {
+            type: 'payment.status.response',
+            correlationId: event.correlationId,
+            data: {
+              orderId: order._id.toString(),
+              status: order.status,
+              paymentStatus: order.payment ? order.payment.status : null,
+              success: true
+            }
+          });
+        } catch (replyError) {
+          logger.error('Error sending payment status update response', {
+            error: replyError.message,
+            correlationId: event.correlationId
+          });
+        }
+      }
+      
+      return order;
     } catch (error) {
-      logger.error('Error handling payment status update', { error: error.message });
+      logger.error('Error handling payment status update', error);
+      throw error;
     }
   }
 
-  async publishOrderEvent(eventType, data) {
+  async publishOrderEvent(type, data) {
     try {
-      await rabbitmq.publish('order-events', eventType, {
-        type: eventType,
-        data
+      console.log('\nOrder Service Publishing Event:');
+      console.log('------------------------');
+      console.log(`Type: ${type}`);
+      console.log(`Data:`, data);
+      console.log('------------------------');
+      
+      await rabbitmq.publish('order-events', type, {
+        type,
+        data,
+        timestamp: new Date()
       });
-      logger.info(`Published ${eventType} event`);
+      
+      logger.info(`Published order event: ${type}`, {
+        orderId: data.orderId,
+        eventType: type
+      });
     } catch (error) {
-      logger.error(`Error publishing ${eventType} event:`, error);
+      logger.error('Error publishing order event:', error);
       throw error;
     }
   }
@@ -185,58 +347,23 @@ class OrderEventHandler {
   // Request product validation from Product Service
   async requestProductValidation(products) {
     try {
-      // Generate a correlation ID for this request
-      const correlationId = Date.now().toString();
+      logger.info('Requesting product validation', { products });
       
-      // Log the products being validated
-      logger.info('Requesting product validation', {
-        products: JSON.stringify(products),
-        correlationId
-      });
+      const correlationId = `product-validation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      // Create a promise that will be resolved when we receive the response
       const validationPromise = new Promise(async (resolve, reject) => {
-        let queueName;
         const timeoutId = setTimeout(() => {
-          reject(new Error('Product validation timeout'));
-          // Cleanup will be handled in the finally block
-        }, 5000); // 5 seconds timeout
-
+          reject(new Error('Product validation request timed out'));
+        }, 10000); // 10 seconds timeout
+        
         try {
           // Create a temporary response queue
-          queueName = await rabbitmq.createTemporaryResponseQueue(
+          const queueName = await rabbitmq.createTemporaryResponseQueue(
             'product-events',
             correlationId,
             (message) => {
               if (message.correlationId === correlationId) {
                 clearTimeout(timeoutId);
-                
-                // Log the validation response
-                if (message.data && message.data.validationResults) {
-                  const invalidItems = message.data.validationResults
-                    .filter(result => !result.isValid || !result.hasStock)
-                    .map(result => ({
-                      productId: result.productId,
-                      valid: result.isValid,
-                      hasStock: result.hasStock,
-                      currentStock: result.currentStock,
-                      error: result.error
-                    }));
-                  
-                  if (invalidItems.length > 0) {
-                    logger.error('Product validation failed', {
-                      invalid: invalidItems,
-                      isValid: message.data.isValid,
-                      message: message.data.message
-                    });
-                  } else {
-                    logger.info('Product validation successful', {
-                      isValid: message.data.isValid,
-                      message: message.data.message
-                    });
-                  }
-                }
-                
                 resolve(message.data);
               }
             }
@@ -256,26 +383,101 @@ class OrderEventHandler {
         } catch (error) {
           clearTimeout(timeoutId);
           reject(error);
-        } finally {
-          // Cleanup function to be called after resolution or rejection
-          if (queueName) {
-            setTimeout(async () => {
-              try {
-                await rabbitmq.unsubscribe(queueName);
-              } catch (error) {
-                console.error('Error cleaning up temporary queue:', error);
-              }
-            }, 1000); // Give a second for the message to be processed
-          }
         }
       });
-
-      // Wait for the response
-      const validationResult = await validationPromise;
-      return validationResult;
+      
+      return await validationPromise;
     } catch (error) {
       logger.error('Error requesting product validation:', error);
       throw error;
+    }
+  }
+
+  // Handle order details request from other services
+  async handleOrderDetailsRequest(message) {
+    try {
+      logger.info('Received order details request', { 
+        correlationId: message.correlationId,
+        orderId: message.data?.orderId
+      });
+      
+      if (!message.data || !message.data.orderId || !message.data.replyTo) {
+        logger.error('Invalid order details request', { 
+          message,
+          missingOrderId: !message.data?.orderId,
+          missingReplyTo: !message.data?.replyTo
+        });
+        return;
+      }
+      
+      const { orderId, replyTo } = message.data;
+      
+      // Find the order
+      const order = await Order.findById(orderId);
+      
+      if (!order) {
+        logger.error('Order not found for details request', { orderId });
+        
+        // Send back error response
+        await rabbitmq.publish('order-events', replyTo, {
+          type: 'order.details.response',
+          correlationId: message.correlationId,
+          data: {
+            orderId,
+            error: 'Order not found',
+            success: false
+          }
+        });
+        
+        return;
+      }
+      
+      // Extract and format the necessary order details
+      const orderDetails = {
+        orderId: order._id.toString(),
+        userId: order.userId,
+        status: order.status,
+        items: order.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          price: item.price,
+          productName: item.productName
+        })),
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        success: true
+      };
+      
+      logger.info('Sending order details response', { 
+        correlationId: message.correlationId,
+        orderId: order._id.toString(),
+        itemCount: orderDetails.items.length
+      });
+      
+      // Send the response
+      await rabbitmq.publish('order-events', replyTo, {
+        type: 'order.details.response',
+        correlationId: message.correlationId,
+        data: orderDetails
+      });
+    } catch (error) {
+      logger.error('Error handling order details request', { 
+        error: error.message,
+        stack: error.stack
+      });
+      
+      // Try to send error response if possible
+      if (message.data?.replyTo) {
+        await rabbitmq.publish('order-events', message.data.replyTo, {
+          type: 'order.details.response',
+          correlationId: message.correlationId,
+          data: {
+            orderId: message.data?.orderId,
+            error: error.message,
+            success: false
+          }
+        });
+      }
     }
   }
 }

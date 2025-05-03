@@ -2,7 +2,6 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Payment = require('../models/Payment');
 
 // Initialize Stripe client
-console.log('Stripe client initialized successfully');
 
 class PaymentService {
   // Get payment gateways config
@@ -17,8 +16,6 @@ class PaymentService {
   // Create a payment using Stripe
   async createStripePayment(orderData) {
     try {
-      console.log('Creating Stripe payment for order:', orderData.orderId, 'amount:', orderData.amount);
-      
       // Create a new payment record
       const payment = new Payment({
         orderId: orderData.orderId,
@@ -29,9 +26,18 @@ class PaymentService {
       });
       
       // Create a payment intent with Stripe
-      console.log('Creating Stripe payment intent...');
+      
+      // Determine if the amount needs to be converted to cents
+      // If amount is a whole number and >= 100, it's likely already in cents
+      // Otherwise, convert from dollars to cents
+      const isLikelyCents = Number.isInteger(payment.amount) && payment.amount >= 100;
+      const stripeAmount = isLikelyCents ? payment.amount : Math.round(payment.amount * 100);
+      
+      // Add idempotency key to prevent duplicate payments
+      const idempotencyKey = orderData.idempotencyKey || `order_${payment.orderId}_${Date.now()}`;
+      
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(payment.amount * 100), // Convert to cents
+        amount: stripeAmount, // Use the appropriate amount
         currency: payment.currency.toLowerCase(),
         metadata: {
           orderId: payment.orderId,
@@ -41,38 +47,39 @@ class PaymentService {
         automatic_payment_methods: {
           enabled: true
         }
+      }, {
+        idempotencyKey
       });
-      
-      console.log('Stripe payment intent created successfully:', paymentIntent.id);
       
       // Update payment with Stripe data
       payment.stripePaymentIntentId = paymentIntent.id;
       payment.stripeClientSecret = paymentIntent.client_secret;
+      payment.status = 'pending';
       await payment.save();
-      
-      console.log('Stripe payment record saved:', {
-        paymentId: payment._id,
-        paymentIntentId: paymentIntent.id,
-        clientSecret: paymentIntent.client_secret.substring(0, 10) + '...'
-      });
       
       return {
         paymentId: payment._id,
         orderId: payment.orderId,
         stripePaymentIntentId: paymentIntent.id,
         stripeClientSecret: paymentIntent.client_secret,
-        status: 'created'
+        status: 'created',
+        success: true
       };
     } catch (error) {
-      console.error('Error creating Stripe payment:', error);
-      throw new Error(`Failed to create Stripe payment: ${error.message}`);
+      // Check for Stripe errors
+      if (error.type === 'StripeCardError') {
+        throw new Error(`Card error: ${error.message}`);
+      } else if (error.type === 'StripeInvalidRequestError') {
+        throw new Error(`Invalid request: ${error.message}`);
+      } else {
+        throw new Error(`Failed to create Stripe payment: ${error.message}`);
+      }
     }
   }
   
   // Create payment - automatically choose between Stripe and cash
   async createPayment(orderData) {
     const paymentMethod = orderData.paymentMethod || 'stripe';
-    console.log('Creating payment with method:', paymentMethod);
     
     if (paymentMethod === 'stripe') {
       return this.createStripePayment(orderData);
@@ -104,7 +111,6 @@ class PaymentService {
         status: 'pending'
       };
     } catch (error) {
-      console.error('Error creating cash payment:', error);
       throw new Error(`Failed to create cash payment: ${error.message}`);
     }
   }
@@ -163,7 +169,6 @@ class PaymentService {
         throw new Error(`Payment intent not succeeded. Status: ${paymentIntent.status}`);
       }
     } catch (error) {
-      console.error('Error confirming Stripe payment:', error);
       throw new Error(`Failed to confirm payment: ${error.message}`);
     }
   }
@@ -214,7 +219,6 @@ class PaymentService {
             });
           }
         } catch (stripeError) {
-          console.error('Error checking Stripe payment status:', stripeError);
         }
       }
 
@@ -228,7 +232,6 @@ class PaymentService {
         error: payment.error
       };
     } catch (error) {
-      console.error('Error getting payment status:', error);
       throw new Error('Failed to get payment status');
     }
   }
@@ -249,7 +252,6 @@ class PaymentService {
         stripeClientSecret: payment.stripeClientSecret
       };
     } catch (error) {
-      console.error('Error getting payment by order ID:', error);
       throw new Error('Failed to get payment by order ID');
     }
   }
@@ -271,7 +273,6 @@ class PaymentService {
         try {
           await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
         } catch (stripeError) {
-          console.error('Error cancelling Stripe payment intent:', stripeError);
           // Continue with the cancellation in our system even if Stripe fails
         }
       }
@@ -285,7 +286,6 @@ class PaymentService {
         status: payment.status
       };
     } catch (error) {
-      console.error('Error cancelling payment:', error);
       throw new Error('Failed to cancel payment');
     }
   }

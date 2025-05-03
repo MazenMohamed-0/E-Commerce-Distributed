@@ -9,14 +9,11 @@ const cors = require('cors');
 app.use(cors());
 app.use(express.json());
 
-console.log('Product Service: Environment Variables Loaded');
-console.log('Product Service: Mongo URI:', process.env.MONGO_URI);
-console.log('Product Service: JWT Secret:', process.env.JWT_SECRET);
+const MONGODB_URI = process.env.CONNECTION_STRING ;
 
 
 // Connect to MongoDB
-mongoose.connect('mongodb+srv://ramezfathi:RQVKiyEfmY69IG7D@cluster0.kamuf9s.mongodb.net/product?retryWrites=true&w=majority', { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('Product Service: Connected to MongoDB'))
+mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch((err) => console.error('Product Service: MongoDB connection error:', err));
 
 app.use('/products', productRoutes);

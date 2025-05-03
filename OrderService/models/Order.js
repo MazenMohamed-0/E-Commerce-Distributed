@@ -45,13 +45,7 @@ const orderSchema = new mongoose.Schema({
     type: String,
     enum: [
       'pending',
-      'stock_validating',
-      'stock_validated',
-      'payment_pending',
-      'payment_completed',
       'processing',
-      'shipped',
-      'delivered',
       'completed',
       'failed',
       'cancelled'
@@ -284,20 +278,66 @@ orderSchema.methods.updatePaymentInfo = function(paymentData) {
   if (paymentData.paypalOrderId) this.payment.paypalOrderId = paymentData.paypalOrderId;
   if (paymentData.amount) this.payment.amount = paymentData.amount;
   if (paymentData.paymentUrl) this.payment.paymentUrl = paymentData.paymentUrl;
+  if (paymentData.stripePaymentIntentId) this.payment.stripePaymentIntentId = paymentData.stripePaymentIntentId;
   
   this.payment.updatedAt = new Date();
   
-  // Update order status based on payment status
-  if (paymentData.status === 'completed' && this.status === 'payment_pending') {
-    this.status = 'payment_completed';
-  } else if (paymentData.status === 'failed' && ['pending', 'payment_pending'].includes(this.status)) {
-    this.status = 'failed';
-    if (paymentData.error) {
-      this.error = {
-        message: paymentData.error,
-        step: 'payment',
-        timestamp: new Date()
-      };
+  // Handle payment status updates
+  if (paymentData.status === 'completed') {
+    // If order is already failed, we should not update it to completed
+    if (this.status === 'failed') {
+      // Add to status history but don't change order status
+      if (!this.statusHistory) {
+        this.statusHistory = [];
+      }
+      
+      this.statusHistory.push({
+        status: 'payment_completed_but_order_failed',
+        timestamp: new Date(),
+        message: 'Payment was completed but order had already failed (stock validation failed or other issues)'
+      });
+      
+      // Keep payment status as completed
+      this.payment.status = 'completed';
+      
+      // Leave order status as 'failed'
+    } 
+    // If order is in a valid state for completion (pending or processing)
+    else if (this.status === 'pending' || this.status === 'processing') {
+      // Mark payment as completed
+      this.payment.status = 'completed';
+      
+      // Then update the order status directly to completed
+      this.status = 'completed';
+      
+      // Add to status history
+      if (!this.statusHistory) {
+        this.statusHistory = [];
+      }
+      
+      this.statusHistory.push({
+        status: 'completed',
+        timestamp: new Date(),
+        message: 'Order completed automatically after successful payment'
+      });
+    }
+  } 
+  // Handle failed payment
+  else if (paymentData.status === 'failed') {
+    this.payment.status = 'failed';
+    
+    // Only update order status to failed if it's in a pending or processing state 
+    // (don't change completed orders to failed)
+    if (['pending', 'processing'].includes(this.status)) {
+      this.status = 'failed';
+      
+      if (paymentData.error) {
+        this.error = {
+          message: paymentData.error,
+          step: 'payment',
+          timestamp: new Date()
+        };
+      }
     }
   }
 };

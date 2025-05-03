@@ -14,8 +14,9 @@ import {
   Toolbar,
   Typography,
   IconButton,
-  useTheme,
-  Button,
+  Avatar,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -23,11 +24,12 @@ import {
   People as PeopleIcon,
   Logout as LogoutIcon,
   ShoppingBag as OrdersIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/hooks';
 import DashboardOverview from '../../components/AdminDashboard/DashboardOverview';
 import UserManagement from '../../components/AdminDashboard/UserManagement';
-import MyOrders from '../MyOrders';
+import AdminOrders from './AdminOrders';
 
 const drawerWidth = 240;
 
@@ -36,7 +38,7 @@ const AdminHome = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [selectedTab, setSelectedTab] = useState('dashboard');
-  const theme = useTheme();
+  const [anchorEl, setAnchorEl] = useState(null);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -45,6 +47,14 @@ const AdminHome = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleProfileClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
   };
 
   const menuItems = [
@@ -72,17 +82,6 @@ const AdminHome = () => {
             <ListItemText primary={item.text} />
           </ListItem>
         ))}
-        <ListItem 
-          button 
-          key="logout" 
-          onClick={handleLogout}
-          sx={{ mt: 2, color: theme.palette.error.main }}
-        >
-          <ListItemIcon>
-            <LogoutIcon color="error" />
-          </ListItemIcon>
-          <ListItemText primary="Logout" />
-        </ListItem>
       </List>
     </div>
   );
@@ -94,7 +93,7 @@ const AdminHome = () => {
       case 'users':
         return <UserManagement />;
       case 'orders':
-        return <MyOrders />;
+        return <AdminOrders />;
       default:
         return <DashboardOverview />;
     }
@@ -122,13 +121,19 @@ const AdminHome = () => {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {menuItems.find(item => item.value === selectedTab)?.text}
           </Typography>
-          <Button 
-            color="inherit" 
-            onClick={handleLogout}
-            startIcon={<LogoutIcon />}
+          
+          <Avatar
+            src={user?.picture || user?.avatar}
+            onClick={handleProfileClick}
+            sx={{ cursor: 'pointer', mr: 2 }}
+          />
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
           >
-            Logout
-          </Button>
+            <MenuItem onClick={handleLogout}>Logout</MenuItem>
+          </Menu>
         </Toolbar>
       </AppBar>
 
