@@ -30,3 +30,19 @@ npm-debug.log*
 
 # MongoDB data
 mongodb_data/ 
+# node_modules
+node_modules/
+
+# Environment variables - make sure these are ignored
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# IDE and OS files
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+ThumbsDb.db

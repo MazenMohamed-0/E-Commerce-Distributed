@@ -138,6 +138,56 @@ class RabbitMQ {
     }
   }
 
+  // Add method to publish to a specific queue (used for replies)
+  async publishToQueue(queueName, message) {
+    try {
+      if (!this.channel) {
+        await this.connect();
+      }
+      
+      // Assert queue exists with appropriate settings
+      // For temporary response queues, they should be durable:false so we need to check 
+      // if the queue name starts with 'response' or contains a UUID pattern
+      const isDurable = 
+        !(queueName.startsWith('response') || 
+          queueName.includes('payment-result') || 
+          /response\.[0-9]+/.test(queueName));
+      
+      console.log(`Asserting queue ${queueName} with durable=${isDurable}`);
+      await this.channel.assertQueue(queueName, { 
+        durable: isDurable,
+        autoDelete: !isDurable
+      });
+      
+      // Send the message to the queue with persistent delivery mode for important messages
+      const options = {
+        persistent: isDurable  // Use persistent delivery mode for durable queues
+      };
+      
+      const success = this.channel.sendToQueue(
+        queueName, 
+        Buffer.from(JSON.stringify(message)),
+        options
+      );
+      
+      if (success) {
+        console.log(`Successfully published message to queue ${queueName}`);
+      } else {
+        console.warn(`Channel write buffer is full - applying backpressure on queue ${queueName}`);
+        // Wait for drain event before considering the operation complete
+        await new Promise(resolve => {
+          this.channel.once('drain', resolve);
+        });
+        console.log(`Channel drained, message to ${queueName} should now be sent`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`Error publishing to queue ${queueName}:`, error);
+      throw error;
+    }
+  }
+
   async subscribe(exchange, queue, routingKey, callback, { temporary = false } = {}) {
     try {
       if (!this.channel) {
@@ -227,16 +277,73 @@ class RabbitMQ {
   }
 
   async createTemporaryResponseQueue(exchange, correlationId, callback) {
-    const queueName = `response-${correlationId}`;
-    const routingKey = `response.${correlationId}`;
-    
-    return await this.subscribe(
-      exchange,
-      queueName,
-      routingKey,
-      callback,
-      { temporary: true }
-    );
+    try {
+      console.log(`Creating temporary response queue for correlationId: ${correlationId}`);
+      
+      // Generate a unique queue name for this response
+      const queueName = `response-${correlationId}`;
+      const routingKey = `response.${correlationId}`;
+      
+      // Direct the queue to bind to the specific routing key
+      if (!this.channel) {
+        await this.connect();
+      }
+      
+      // Assert the exchange
+      const exchangeConfig = { durable: true };
+      this.exchanges.set(exchange, exchangeConfig);
+      await this.channel.assertExchange(exchange, 'topic', exchangeConfig);
+      
+      // Create a non-durable, auto-delete queue that will be deleted when no longer used
+      const queueOptions = { 
+        exclusive: false,  // Allow other connections to use (important for services)
+        autoDelete: true,  // Auto-delete when no consumers
+        durable: false     // Non-durable since it's temporary
+      };
+      
+      console.log(`Asserting temporary queue ${queueName} with options:`, queueOptions);
+      const q = await this.channel.assertQueue(queueName, queueOptions);
+      
+      // Bind the queue to the specific routing key
+      await this.channel.bindQueue(q.queue, exchange, routingKey);
+      console.log(`Bound queue ${q.queue} to exchange ${exchange} with routing key ${routingKey}`);
+      
+      // Set up the consumer for this queue
+      const { consumerTag } = await this.channel.consume(q.queue, (msg) => {
+        if (msg) {
+          try {
+            const content = JSON.parse(msg.content.toString());
+            console.log(`Received response on temporary queue ${queueName}:`, {
+              correlationId: content.correlationId,
+              success: content.data?.success,
+              type: content.type
+            });
+            
+            // Invoke the callback with the message content
+            callback(content);
+            this.channel.ack(msg);
+          } catch (error) {
+            console.error(`Error processing message on queue ${queueName}:`, error);
+            this.channel.nack(msg);
+          }
+        }
+      });
+      
+      // Store consumer information for cleanup
+      this.consumers.set(queueName, { 
+        consumerTag, 
+        exchange,
+        routingKey,
+        callback,
+        options: { temporary: true }
+      });
+      
+      console.log(`Successfully created temporary response queue: ${queueName}`);
+      return queueName;
+    } catch (error) {
+      console.error('Error creating temporary response queue:', error);
+      throw error;
+    }
   }
 
   async close() {

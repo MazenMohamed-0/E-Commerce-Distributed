@@ -133,7 +133,8 @@ class CartService {
           price: product.price,
           stock: product.stock,
           imageUrl: product.imageUrl,
-          sellerId: product.sellerId
+          // Use the stored sellerId from the cart if available, otherwise use the one from product details
+          sellerId: item.sellerId || product.sellerId || product.createdBy
         };
       });
 
@@ -194,14 +195,20 @@ class CartService {
         cart.items[existingItemIndex].quantity = newTotalQuantity;
         // Update stock information
         cart.items[existingItemIndex].stock = productDetails.stock;
+        // Ensure seller ID is set in case it was missing
+        if (!cart.items[existingItemIndex].sellerId && (itemData.sellerId || productDetails.sellerId)) {
+          cart.items[existingItemIndex].sellerId = itemData.sellerId || productDetails.sellerId;
+        }
       } else {
         // Add new item with only necessary information
         cart.items.push({
           productId: itemData.productId,
           quantity: itemData.quantity,
-          price: productDetails.price,
           stock: productDetails.stock,
+          sellerId: itemData.sellerId || productDetails.sellerId || productDetails.createdBy,
+          // Add missing required fields
           name: productDetails.name,
+          price: productDetails.price,
           imageUrl: productDetails.imageUrl
         });
       }

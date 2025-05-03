@@ -1,175 +1,205 @@
-const rabbitmq = require('./rabbitmq');
-const eventTypes = require('./eventTypes');
+const rabbitmqService = require('../services/rabbitmqService');
 const paymentService = require('../services/paymentService');
-const winston = require('winston');
+const eventTypes = require('../../shared/eventTypes');
+const rabbitmq = require('../../shared/rabbitmq');
 
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: 'payment-service-events.log' }),
-    new winston.transports.Console({ format: winston.format.simple() })
-  ]
-});
-
-module.exports = {
+class PaymentEventHandler {
   async init() {
-    try {
-      await rabbitmq.connect();
-      // Listen for payment requests
-      await rabbitmq.subscribe('payment-events', 'payment-service-queue', eventTypes.PAYMENT_REQUEST, this.handlePaymentRequest.bind(this));
-      await rabbitmq.subscribe('payment-events', 'payment-service-queue', eventTypes.PAYMENT_EXECUTE, this.handlePaymentExecute.bind(this));
-      logger.info('Payment event handlers initialized');
-    } catch (error) {
-      logger.error('Failed to initialize payment event handlers', { error: error.message });
-      // Still continue - don't stop the service if RabbitMQ is not available immediately
-    }
-  },
-
-  async handlePaymentRequest(event) {
-    try {
-      const { orderId, userId, amount, currency, idempotencyKey, replyTo, correlationId } = event.data;
-      logger.info('Received PAYMENT_REQUEST', { orderId, userId, amount, correlationId });
-      
-      const { payment, newPayment, orderReference } = await paymentService.createPayment({ 
-        orderId, 
-        userId, 
-        amount, 
-        currency,
-        idempotencyKey
-      });
-      
-      const approvalUrl = payment.links.find(link => link.rel === 'approval_url');
-      
-      // Send PAYMENT_RESULT event with approval URL
-      await rabbitmq.publish('payment-events', replyTo, {
-        type: eventTypes.PAYMENT_RESULT,
-        correlationId,
-        data: {
-          status: 'created',
-          approvalUrl: approvalUrl?.href,
-          paymentId: payment.id,
-          orderId,
-          userId
-        }
-      });
-      
-      // Also publish a general payment status event for any interested services
-      await rabbitmq.publish('payment-events', 'payment.status', {
-        type: 'PAYMENT_STATUS_UPDATED',
-        data: {
-          orderId,
-          paymentId: payment.id,
-          paypalPaymentId: payment.id, 
-          status: 'created',
-          paymentUrl: approvalUrl?.href,
-          timestamp: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      logger.error('Error handling PAYMENT_REQUEST', { error: error.message || error });
-      
-      let errorMessage = error.message || 'Unknown payment error';
-      
-      try {
-        await rabbitmq.publish('payment-events', event.data.replyTo, {
-          type: eventTypes.PAYMENT_RESULT,
-          correlationId: event.correlationId,
-          data: {
-            status: 'failed',
-            error: errorMessage,
-            orderId: event.data.orderId,
-            timestamp: new Date().toISOString()
-          }
-        });
-        
-        // Also publish a general payment failure event
-        await rabbitmq.publish('payment-events', 'payment.status', {
-          type: 'PAYMENT_STATUS_UPDATED',
-          data: {
-            orderId: event.data.orderId,
-            status: 'failed',
-            error: errorMessage,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (pubError) {
-        logger.error('Error publishing payment failure', { 
-          error: pubError.message,
-          originalError: errorMessage 
-        });
-      }
-    }
-  },
-
-  async handlePaymentExecute(event) {
-    try {
-      const { paymentId, payerId, orderId, userId, replyTo, correlationId } = event.data;
-      logger.info('Received PAYMENT_EXECUTE', { paymentId, payerId, orderId, correlationId });
-      
-      const { payment, updated, orderReference } = await paymentService.executePayment(paymentId, payerId);
-      
-      // Send PAYMENT_RESULT event with payment status
-      await rabbitmq.publish('payment-events', replyTo, {
-        type: eventTypes.PAYMENT_RESULT,
-        correlationId,
-        data: {
-          status: payment.state === 'approved' ? 'completed' : 'failed',
-          paymentId,
-          orderId,
-          userId,
-          payment
-        }
-      });
-      
-      // Also publish a general payment status event
-      await rabbitmq.publish('payment-events', 'payment.status', {
-        type: 'PAYMENT_STATUS_UPDATED',
-        data: {
-          orderId,
-          paymentId: updated.paypalPaymentId,
-          status: updated.status,
-          timestamp: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      logger.error('Error handling PAYMENT_EXECUTE', { 
-        error: error.message || error,
-        paymentId: event.data.paymentId
-      });
-      
-      let errorMessage = error.message || 'Unknown payment execution error';
-      let orderReference = error.orderReference; // Extract order reference if available
-      
-      try {
-        await rabbitmq.publish('payment-events', event.data.replyTo, {
-          type: eventTypes.PAYMENT_RESULT,
-          correlationId: event.correlationId,
-          data: {
-            status: 'failed',
-            error: errorMessage,
-            orderId: orderReference?.orderId || event.data.orderId,
-            timestamp: new Date().toISOString()
-          }
-        });
-        
-        // Also publish a general payment failure event
-        await rabbitmq.publish('payment-events', 'payment.status', {
-          type: 'PAYMENT_STATUS_UPDATED',
-          data: {
-            orderId: orderReference?.orderId || event.data.orderId,
-            paymentId: event.data.paymentId,
-            status: 'failed',
-            error: errorMessage,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (pubError) {
-        logger.error('Error publishing payment execution failure', { 
-          error: pubError.message,
-          originalError: errorMessage 
-        });
-      }
-    }
+    await rabbitmqService.connect();
+    this.setupEventListeners();
   }
-}; 
+
+  setupEventListeners() {
+    // Listen for payment request events from order service
+    this.subscribeToOrderPaymentRequests();
+    
+    // Listen for order cancelled events
+    this.subscribeToOrderCancellations();
+  }
+
+  // Subscribe to payment requests from order service
+  async subscribeToOrderPaymentRequests() {
+    await rabbitmqService.subscribeToOrderEvents(eventTypes.PAYMENT_REQUEST, async (message) => {
+      try {
+        console.log('Received payment request:', message);
+        const { data, correlationId } = message;
+        
+        if (!data || !data.orderId || !data.userId || !data.amount) {
+          throw new Error('Invalid payment request data');
+        }
+        
+        // Get payment method from request or default to stripe
+        const paymentMethod = data.paymentMethod || 'stripe';
+        console.log(`Processing ${paymentMethod} payment request for order ${data.orderId}`);
+        
+        // Create payment for the order
+        const paymentResult = await paymentService.createPayment({
+          orderId: data.orderId,
+          userId: data.userId,
+          amount: data.amount,
+          currency: data.currency || 'USD',
+          paymentMethod
+        });
+        
+        console.log(`${paymentMethod.toUpperCase()} payment created successfully:`, {
+          paymentId: paymentResult.paymentId,
+          orderId: paymentResult.orderId
+        });
+        
+        // Extract the replyTo from the data object
+        const replyTo = data.replyTo;
+        
+        // Send response with appropriate payment data
+        if (replyTo) {
+          let responseData;
+          
+          if (paymentMethod === 'stripe') {
+            console.log(`Sending Stripe payment response to ${replyTo}`);
+            console.log('Stripe payment data:', { 
+              paymentId: paymentResult.paymentId,
+              orderId: paymentResult.orderId,
+              stripePaymentIntentId: paymentResult.stripePaymentIntentId,
+              clientSecret: paymentResult.stripeClientSecret ? paymentResult.stripeClientSecret.substring(0, 10) + '...' : 'missing'
+            });
+            
+            responseData = {
+              success: true,
+              paymentId: paymentResult.paymentId,
+              orderId: paymentResult.orderId,
+              stripePaymentIntentId: paymentResult.stripePaymentIntentId,
+              stripeClientSecret: paymentResult.stripeClientSecret
+            };
+          } else if (paymentMethod === 'cash') {
+            console.log(`Sending Cash payment response to ${replyTo}`);
+            responseData = {
+              success: true,
+              paymentId: paymentResult.paymentId,
+              orderId: paymentResult.orderId
+            };
+          } else {
+            throw new Error(`Unsupported payment method: ${paymentMethod}`);
+          }
+          
+          console.log(`Sending payment response to ${replyTo}`, {
+            correlationId,
+            success: responseData.success,
+            paymentId: responseData.paymentId
+          });
+          
+          // Use the exchange-based publishing that matches the temporary queue pattern
+          try {
+            // If replyTo looks like a queue name with the format response-payment-...,
+            // extract the correlation ID and use it as the routing key
+            if (replyTo.startsWith('response-') && replyTo.includes('payment-')) {
+              console.log(`Using exchange-based publishing with correlationId: ${correlationId}`);
+              
+              // Publish to the payment-events exchange with the routing key in the format
+              // that matches what createTemporaryResponseQueue is expecting
+              await rabbitmq.publish(
+                'payment-events',
+                `response.${correlationId}`, 
+                {
+                  correlationId,
+                  type: `response.${correlationId}`,
+                  data: responseData
+                }
+              );
+              
+              console.log(`Successfully published payment response to exchange with routing key response.${correlationId}`);
+            } else {
+              // Fall back to direct queue publishing for backward compatibility
+              await rabbitmq.publishToQueue(replyTo, {
+                correlationId,
+                data: responseData
+              });
+              
+              console.log(`Successfully published payment response directly to queue ${replyTo}`);
+            }
+          } catch (queueError) {
+            console.error(`Error publishing to queue/exchange: ${queueError.message}`);
+            throw queueError;
+          }
+        } else {
+          console.error('No replyTo queue specified in the request');
+        }
+        
+        // Publish payment created event
+        await this.publishPaymentCreatedEvent(paymentResult);
+      } catch (error) {
+        console.error('Error processing payment request:', error);
+        
+        // Try to send error response if replyTo is available
+        if (message.data && message.data.replyTo) {
+          const replyTo = message.data.replyTo;
+          try {
+            // Get direct reference to shared rabbitmq for publishing to queues
+            await rabbitmq.publishToQueue(replyTo, {
+              correlationId: message.correlationId,
+              data: {
+                success: false,
+                error: error.message,
+                orderId: message.data.orderId
+              }
+            });
+          } catch (queueError) {
+            console.error(`Error publishing error response to queue ${replyTo}: ${queueError.message}`);
+          }
+        }
+      }
+    });
+  }
+
+  // Subscribe to order cancellations
+  async subscribeToOrderCancellations() {
+    await rabbitmqService.subscribeToOrderEvents(eventTypes.ORDER_CANCELLED, async (message) => {
+      try {
+        console.log('Received order cancellation:', message);
+        const { data } = message;
+        
+        // Find payment by orderId
+        const payment = await paymentService.getPaymentByOrderId(data.orderId);
+        
+        if (payment && payment.status === 'pending') {
+          // Cancel the payment
+          await paymentService.cancelPayment(payment.paymentId);
+          
+          // Publish payment cancelled event
+          await this.publishPaymentCancelledEvent({
+            orderId: data.orderId,
+            paymentId: payment.paymentId
+          });
+        }
+      } catch (error) {
+        console.error('Error processing order cancellation:', error);
+      }
+    });
+  }
+
+  // Publish payment created event
+  async publishPaymentCreatedEvent(paymentData) {
+    await rabbitmqService.publishPaymentEvent('payment.created', paymentData);
+  }
+
+  // Publish payment completed event - called when payment is successfully captured
+  async publishPaymentCompletedEvent(paymentData) {
+    await rabbitmqService.publishPaymentEvent(eventTypes.PAYMENT_RESULT, {
+      ...paymentData,
+      success: true
+    });
+  }
+
+  // Publish payment failed event
+  async publishPaymentFailedEvent(paymentData) {
+    await rabbitmqService.publishPaymentEvent(eventTypes.PAYMENT_RESULT, {
+      ...paymentData,
+      success: false
+    });
+  }
+
+  // Publish payment cancelled event
+  async publishPaymentCancelledEvent(paymentData) {
+    await rabbitmqService.publishPaymentEvent('payment.cancelled', paymentData);
+  }
+}
+
+module.exports = new PaymentEventHandler();

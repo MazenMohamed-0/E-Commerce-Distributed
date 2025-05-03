@@ -8,54 +8,54 @@ const paymentSchema = new mongoose.Schema({
   },
   userId: {
     type: String,
-    required: true,
-    index: true
+    required: true
   },
   amount: {
     type: Number,
-    required: true
+    required: true,
+    min: 0
   },
   currency: {
     type: String,
+    required: true,
     default: 'USD'
   },
   status: {
     type: String,
-    enum: ['created', 'approved', 'failed', 'completed', 'cancelled'],
-    default: 'created',
+    enum: ['pending', 'completed', 'failed', 'cancelled'],
+    default: 'pending',
+    index: true
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['paypal', 'stripe', 'credit_card'],
+    required: true,
+    default: 'stripe'
+  },
+  // PayPal specific fields
+  paypalOrderId: {
+    type: String,
+    sparse: true,
     index: true
   },
   paypalPaymentId: {
     type: String,
-    index: true
+    sparse: true
   },
-  idempotencyKey: {
+  // Stripe specific fields
+  stripePaymentIntentId: {
     type: String,
-    unique: true,
     sparse: true,
     index: true
   },
-  payer: {
-    type: Object
-  },
-  transactions: {
-    type: Array
-  },
-  error: {
+  stripeClientSecret: {
     type: String
   },
-  retryCount: {
-    type: Number,
-    default: 0
+  error: {
+    message: String,
+    code: String,
+    timestamp: Date
   },
-  statusHistory: [{
-    status: String,
-    timestamp: {
-      type: Date,
-      default: Date.now
-    },
-    message: String
-  }],
   createdAt: {
     type: Date,
     default: Date.now
@@ -66,21 +66,9 @@ const paymentSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Add pre-save middleware to track status changes
+// Update timestamp on save
 paymentSchema.pre('save', function(next) {
-  // Add status change to history if status changed
-  if (this.isModified('status')) {
-    if (!this.statusHistory) {
-      this.statusHistory = [];
-    }
-    
-    this.statusHistory.push({
-      status: this.status,
-      timestamp: new Date(),
-      message: `Payment status changed to ${this.status}`
-    });
-  }
-  
+  this.updatedAt = Date.now();
   next();
 });
 

@@ -36,81 +36,98 @@ class OrderService {
                 throw new Error('Order not found');
             }
 
+            // Return basic order data first and log that we're attempting to enrich with product details
+            console.log('Found order:', id, 'Now attempting to enrich with product details');
+            
+            // Create a copy of the order object to avoid modifying it directly
             const orderWithProducts = { ...order.toObject() };
 
-            // Fetch product details for each item using RabbitMQ
-            const productPromises = order.items.map(async (item) => {
-                const plainItem = item.toObject ? item.toObject() : item;
-                try {
-                    // Create a unique correlation ID for this request
-                    const correlationId = `product-details-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                    
-                    // Create a promise that will be resolved when we receive the response
-                    const responsePromise = new Promise(async (resolve, reject) => {
-                        const timeoutId = setTimeout(() => {
-                            reject(new Error('Product details request timed out'));
-                        }, 5000); // 5 second timeout
+            try {
+                // Attempt to enrich with product details, but don't let it block the response
+                // Fetch product details for each item using RabbitMQ
+                const productPromises = order.items.map(async (item) => {
+                    const plainItem = item.toObject ? item.toObject() : item;
+                    try {
+                        // Create a unique correlation ID for this request
+                        const correlationId = `product-details-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                        
+                        // Create a promise that will be resolved when we receive the response
+                        const responsePromise = new Promise(async (resolve, reject) => {
+                            // Set a shorter timeout (3 seconds) to avoid waiting too long
+                            const timeoutId = setTimeout(() => {
+                                reject(new Error('Product details request timed out'));
+                            }, 3000); // 3 second timeout
 
-                        // Create a temporary response queue
-                        const queueName = await rabbitmq.createTemporaryResponseQueue(
-                            'product-events',
-                            correlationId,
-                            (message) => {
-                                clearTimeout(timeoutId);
-                                if (message.data.error) {
-                                    reject(new Error(message.data.error));
-                                } else {
-                                    resolve(message.data);
-                                }
-                            }
-                        );
-
-                        try {
-                            // Publish the product details request
-                            await rabbitmq.publish('product-events', 'product.details.request', {
-                                type: 'product.details.request',
+                            // Create a temporary response queue
+                            const queueName = await rabbitmq.createTemporaryResponseQueue(
+                                'product-events',
                                 correlationId,
-                                data: {
-                                    productId: plainItem.productId,
-                                    replyTo: `response.${correlationId}`
+                                (message) => {
+                                    clearTimeout(timeoutId);
+                                    if (message.data.error) {
+                                        reject(new Error(message.data.error));
+                                    } else {
+                                        resolve(message.data);
+                                    }
                                 }
-                            });
-                        } catch (error) {
-                            clearTimeout(timeoutId);
-                            reject(error);
-                        } finally {
-                            // Cleanup function to be called after resolution or rejection
-                            setTimeout(async () => {
-                                try {
-                                    await rabbitmq.unsubscribe(queueName);
-                                } catch (error) {
-                                    console.error('Error cleaning up temporary queue:', error);
-                                }
-                            }, 1000); // Give a second for the message to be processed
-                        }
-                    });
+                            );
 
-                    // Wait for the response
-                    const productDetails = await responsePromise;
-                    return {
-                        ...plainItem,
-                        productDetails
-                    };
-                } catch (error) {
-                    console.error(`Error fetching product ${plainItem.productId}:`, error.message);
-                    return {
-                        ...plainItem,
-                        productDetails: null,
-                        error: error.message
-                    };
+                            try {
+                                // Publish the product details request
+                                await rabbitmq.publish('product-events', 'product.details.request', {
+                                    type: 'product.details.request',
+                                    correlationId,
+                                    data: {
+                                        productId: plainItem.productId,
+                                        replyTo: `response.${correlationId}`
+                                    }
+                                });
+                            } catch (error) {
+                                clearTimeout(timeoutId);
+                                reject(error);
+                            } finally {
+                                // Cleanup function to be called after resolution or rejection
+                                setTimeout(async () => {
+                                    try {
+                                        await rabbitmq.unsubscribe(queueName);
+                                    } catch (error) {
+                                        console.error('Error cleaning up temporary queue:', error);
+                                    }
+                                }, 1000); // Give a second for the message to be processed
+                            }
+                        });
+
+                        // Wait for the response
+                        const productDetails = await responsePromise;
+                        return {
+                            ...plainItem,
+                            productDetails
+                        };
+                    } catch (error) {
+                        // Don't let an error fetching product details block the whole request
+                        console.error(`Error fetching product ${plainItem.productId}:`, error.message);
+                        return {
+                            ...plainItem
+                        };
+                    }
+                });
+
+                // Wait for all product details to be fetched with a race against a timeout
+                const itemsWithProducts = await Promise.race([
+                    Promise.all(productPromises),
+                    new Promise(resolve => setTimeout(() => resolve([]), 5000)) // 5 second max wait time for all products
+                ]);
+                
+                if (itemsWithProducts.length > 0) {
+                    orderWithProducts.items = itemsWithProducts;
                 }
-            });
-
-            // Wait for all product details to be fetched
-            const itemsWithProducts = await Promise.all(productPromises);
-            orderWithProducts.items = itemsWithProducts;
-
-            return orderWithProducts;
+                
+                return orderWithProducts;
+            } catch (productError) {
+                // If there's any error fetching product details, just return the order as is
+                console.error('Error enriching order with product details:', productError);
+                return orderWithProducts;
+            }
         } catch (error) {
             throw new Error('Error fetching order: ' + error.message);
         }
@@ -187,7 +204,7 @@ class OrderService {
                 status: 'processing',
                 paymentStatus: 'pending',
                 shippingAddress: cartData.shippingAddress,
-                paymentType: cartData.paymentType || 'cash'
+                paymentMethod: cartData.paymentType || 'cash'
             });
 
             await order.save();

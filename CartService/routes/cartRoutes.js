@@ -49,7 +49,7 @@ router.get('/', isBuyer, async (req, res) => {
 // Add item to cart
 router.post('/', isBuyer, async (req, res) => {
     try {
-        const { productId, quantity } = req.body;
+        const { productId, quantity, sellerId } = req.body;
         const token = req.headers.authorization;
         
         // Basic validation
@@ -68,7 +68,7 @@ router.post('/', isBuyer, async (req, res) => {
         }
 
         // Add to cart
-        await cartService.addToCart(req.user.userId, { productId, quantity }, token);
+        await cartService.addToCart(req.user.userId, { productId, quantity, sellerId }, token);
         
         // Return success response without product details
         res.status(201).json({

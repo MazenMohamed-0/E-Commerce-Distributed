@@ -10,6 +10,10 @@ const cartItemSchema = new mongoose.Schema({
     required: true,
     min: 1
   },
+  sellerId: {
+    type: String,
+    required: true
+  },
   price: {
     type: Number,
     required: true

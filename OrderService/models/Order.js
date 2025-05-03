@@ -9,6 +9,10 @@ const orderItemSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  productName: {
+    type: String,
+    required: true
+  },
   quantity: {
     type: Number,
     required: true,
@@ -16,7 +20,12 @@ const orderItemSchema = new mongoose.Schema({
   },
   price: {
     type: Number,
-    required: true
+    required: true,
+    min: 0
+  },
+  imageUrl: {
+    type: String,
+    required: false
   }
 });
 
@@ -29,7 +38,8 @@ const orderSchema = new mongoose.Schema({
   items: [orderItemSchema],
   totalAmount: {
     type: Number,
-    required: true
+    required: true,
+    min: 0
   },
   status: {
     type: String,
@@ -39,6 +49,9 @@ const orderSchema = new mongoose.Schema({
       'stock_validated',
       'payment_pending',
       'payment_completed',
+      'processing',
+      'shipped',
+      'delivered',
       'completed',
       'failed',
       'cancelled'
@@ -55,13 +68,57 @@ const orderSchema = new mongoose.Schema({
     message: String
   }],
   shippingAddress: {
-    type: String,
-    required: true
+    type: mongoose.Schema.Types.Mixed,
+    required: true,
+    validate: {
+      validator: function(address) {
+        // Check if it's a string or an object with required fields
+        if (typeof address === 'string') {
+          return address.trim().length > 0;
+        }
+        return address && 
+               address.fullName && 
+               address.addressLine1 && 
+               address.city && 
+               address.state && 
+               address.postalCode && 
+               address.country && 
+               address.phoneNumber;
+      },
+      message: 'Shipping address must include fullName, addressLine1, city, state, postalCode, country, and phoneNumber'
+    }
+  },
+  billingAddress: {
+    fullName: {
+      type: String
+    },
+    addressLine1: {
+      type: String
+    },
+    addressLine2: {
+      type: String
+    },
+    city: {
+      type: String
+    },
+    state: {
+      type: String
+    },
+    postalCode: {
+      type: String
+    },
+    country: {
+      type: String,
+      default: 'US'
+    },
+    phoneNumber: {
+      type: String
+    }
   },
   paymentMethod: {
     type: String,
-    enum: ['cash', 'paypal'],
-    default: 'cash',
+    enum: ['cash', 'paypal', 'credit_card', 'bank_transfer', 'stripe'],
+    default: 'stripe',
     index: true
   },
   // Payment references (not full payment data)
@@ -75,9 +132,16 @@ const orderSchema = new mongoose.Schema({
       sparse: true,
       index: true
     },
-    paypalPaymentId: {
+    paypalOrderId: {
       type: String,
       sparse: true
+    },
+    stripePaymentIntentId: {
+      type: String,
+      sparse: true
+    },
+    stripeClientSecret: {
+      type: String
     },
     status: {
       type: String,
@@ -93,6 +157,50 @@ const orderSchema = new mongoose.Schema({
     paymentUrl: {
       type: String
     }
+  },
+  shipping: {
+    carrier: {
+      type: String
+    },
+    trackingNumber: {
+      type: String,
+      sparse: true
+    },
+    estimatedDelivery: {
+      type: Date
+    },
+    actualDelivery: {
+      type: Date
+    },
+    shippingCost: {
+      type: Number,
+      default: 0
+    }
+  },
+  tax: {
+    amount: {
+      type: Number,
+      default: 0
+    },
+    rate: {
+      type: Number,
+      default: 0
+    }
+  },
+  discount: {
+    code: {
+      type: String
+    },
+    amount: {
+      type: Number,
+      default: 0
+    },
+    percentage: {
+      type: Number
+    }
+  },
+  notes: {
+    type: String
   },
   idempotencyKey: {
     type: String,
@@ -118,11 +226,19 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
-});
+}, { timestamps: true });
 
-// Add pre-save middleware to handle status changes
+// Update the pre-save middleware to calculate totalAmount automatically if not provided
 orderSchema.pre('save', function(next) {
+  // Update timestamps
   this.updatedAt = Date.now();
+  
+  // Calculate totalAmount if not provided
+  if (!this.totalAmount || this.totalAmount <= 0) {
+    this.totalAmount = this.items.reduce((total, item) => {
+      return total + (parseFloat(item.price) * parseInt(item.quantity));
+    }, 0);
+  }
   
   // Add status change to history if status changed
   if (this.isModified('status')) {
@@ -165,7 +281,7 @@ orderSchema.methods.updatePaymentInfo = function(paymentData) {
   // Update only relevant fields
   if (paymentData.status) this.payment.status = paymentData.status;
   if (paymentData.paymentId) this.payment.paymentId = paymentData.paymentId;
-  if (paymentData.paypalPaymentId) this.payment.paypalPaymentId = paymentData.paypalPaymentId;
+  if (paymentData.paypalOrderId) this.payment.paypalOrderId = paymentData.paypalOrderId;
   if (paymentData.amount) this.payment.amount = paymentData.amount;
   if (paymentData.paymentUrl) this.payment.paymentUrl = paymentData.paymentUrl;
   
@@ -185,5 +301,17 @@ orderSchema.methods.updatePaymentInfo = function(paymentData) {
     }
   }
 };
+
+// Static method to calculate total amount
+orderSchema.statics.calculateTotalAmount = function(items) {
+  return items.reduce((total, item) => {
+    return total + (item.price * item.quantity);
+  }, 0);
+};
+
+// Virtual for total items count
+orderSchema.virtual('itemCount').get(function() {
+  return this.items.reduce((total, item) => total + item.quantity, 0);
+});
 
 module.exports = mongoose.model('Order', orderSchema); 

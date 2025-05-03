@@ -36,6 +36,26 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
+  // Add a useEffect hook to fetch cart items when the user is authenticated
+  // Place this after the sync effect
+  useEffect(() => {
+    // Fetch cart data when user logs in or the component mounts with a logged-in user
+    if (user && user.role === 'buyer') {
+      console.log('User is authenticated, fetching cart items directly');
+      fetchCartItems()
+        .then(cartData => {
+          if (cartData && cartData.items && cartData.items.length > 0) {
+            console.log('Fetched cart items from server:', cartData.items.length);
+          } else {
+            console.log('No cart items found on server');
+          }
+        })
+        .catch(err => {
+          console.error('Error fetching initial cart items:', err);
+        });
+    }
+  }, [user]);  // Re-run this effect when the user changes (login/logout)
+
   const syncLocalCartToService = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -89,12 +109,17 @@ export const CartProvider = ({ children }) => {
               processedItems.add(productId);
 
               try {
-                console.log('Adding item to server:', { productId, quantity: item.quantity });
+                console.log('Adding item to server:', { 
+                  productId, 
+                  quantity: item.quantity,
+                  sellerId: item.sellerId || item.createdBy // Include seller ID
+                });
                 await axios.post(
                   `${CART_SERVICE_URL}/cart`,
                   { 
                     productId: productId,
-                    quantity: parseInt(item.quantity)
+                    quantity: parseInt(item.quantity),
+                    sellerId: item.sellerId || item.createdBy // Add sellerId to request
                   },
                   {
                     headers: {
@@ -142,10 +167,19 @@ export const CartProvider = ({ children }) => {
         });
         
         if (response.data) {
-          const cartData = response.data;
-          setCartItems(Array.isArray(cartData.items) ? cartData.items : []);
+          // Check if the cart is in the response data structure
+          const cartData = response.data.cart || response.data;
+          
+          // Check if we have items in the cart
+          const items = cartData.items || [];
+          setCartItems(Array.isArray(items) ? items : []);
           setTotalAmount(cartData.totalAmount || 0);
-          return cartData;
+          
+          // Return the processed cart data for additional checks
+          return {
+            ...cartData,
+            items: items
+          };
         }
         return null;
       } catch (error) {
@@ -192,7 +226,8 @@ export const CartProvider = ({ children }) => {
         `${CART_SERVICE_URL}/cart`,
         { 
           productId: product._id.toString(), 
-          quantity: parseInt(quantity)
+          quantity: parseInt(quantity),
+          sellerId: product.createdBy || product.sellerId // Add seller ID to the request
         },
         { 
           headers: { 
@@ -215,9 +250,11 @@ export const CartProvider = ({ children }) => {
           }
         );
         
-        if (updatedCart.data && updatedCart.data.cart) {
-          setCartItems(updatedCart.data.cart.items || []);
-          setTotalAmount(updatedCart.data.cart.totalAmount || 0);
+        if (updatedCart.data) {
+          const cartData = updatedCart.data.cart || updatedCart.data;
+          const items = cartData.items || [];
+          setCartItems(Array.isArray(items) ? items : []);
+          setTotalAmount(cartData.totalAmount || 0);
         }
       } else {
         throw new Error('Invalid response from cart service');
@@ -283,7 +320,8 @@ export const CartProvider = ({ children }) => {
             name: product.name,
             price: product.price,
             imageUrl: product.imageUrl,
-            stock: product.stock
+            stock: product.stock,
+            sellerId: product.createdBy || product.sellerId // Ensure we capture the sellerId
           });
         }
         
@@ -320,8 +358,12 @@ export const CartProvider = ({ children }) => {
           headers: { Authorization: `Bearer ${token}` }
         });
         console.log('Response from deleted cart service:', response.data);
-        setCartItems(Array.isArray(response.data.items) ? response.data.items : []);
-        setTotalAmount(response.data.totalAmount || 0);
+        
+        // Process the response data correctly
+        const cartData = response.data.cart || response.data;
+        const items = cartData.items || [];
+        setCartItems(Array.isArray(items) ? items : []);
+        setTotalAmount(cartData.totalAmount || 0);
       } catch (error) {
         console.error('Error removing from cart:', error);
       }
@@ -403,8 +445,11 @@ export const CartProvider = ({ children }) => {
         
         if (response.data) {
           console.log('7. Update successful:', response.data);
-          setCartItems(Array.isArray(response.data.items) ? response.data.items : []);
-          setTotalAmount(response.data.totalAmount || 0);
+          // Process the response data correctly
+          const cartData = response.data.cart || response.data;
+          const items = cartData.items || [];
+          setCartItems(Array.isArray(items) ? items : []);
+          setTotalAmount(cartData.totalAmount || 0);
         } else {
           console.error('7. Invalid response');
           throw new Error('Invalid response from cart service');

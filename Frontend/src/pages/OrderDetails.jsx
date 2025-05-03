@@ -42,6 +42,8 @@ const OrderDetails = () => {
       setLoading(true);
       setError('');
 
+      console.log(`Fetching order details for order ID: ${id}`);
+      
       const response = await axios.get(
         `${config.ORDER_SERVICE_URL}/orders/${id}`,
         {
@@ -52,7 +54,7 @@ const OrderDetails = () => {
       );
 
       if (response.data) {
-        console.log('Order data:', response.data.items);
+        console.log('Order data received:', response.data);
         setOrder(response.data);
       }
     } catch (err) {
@@ -269,9 +271,24 @@ const OrderDetails = () => {
               <Typography variant="h6" gutterBottom>
                 Shipping Address
               </Typography>
-              <Typography variant="body1">
-                {order.shippingAddress}
-              </Typography>
+              {order.shippingAddress && typeof order.shippingAddress === 'object' ? (
+                <Box>
+                  <Typography variant="body1">{order.shippingAddress.fullName}</Typography>
+                  <Typography variant="body1">{order.shippingAddress.addressLine1}</Typography>
+                  {order.shippingAddress.addressLine2 && (
+                    <Typography variant="body1">{order.shippingAddress.addressLine2}</Typography>
+                  )}
+                  <Typography variant="body1">
+                    {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.postalCode}
+                  </Typography>
+                  <Typography variant="body1">{order.shippingAddress.country}</Typography>
+                  <Typography variant="body1">Phone: {order.shippingAddress.phoneNumber}</Typography>
+                </Box>
+              ) : (
+                <Typography variant="body1">
+                  {typeof order.shippingAddress === 'string' ? order.shippingAddress : 'No shipping address available'}
+                </Typography>
+              )}
             </Paper>
           </Grid>
 
@@ -294,24 +311,24 @@ const OrderDetails = () => {
                   </TableHead>
                   <TableBody>
                     {order.items.map((item) => (
-                      <TableRow key={item._id}>
+                      <TableRow key={item._id || item.productId}>
                         <TableCell>
                           <Box>
                             <Typography variant="subtitle1">
-                              {item.productDetails?.name || 'Product Name Not Available'}
+                              {item.productName || item.productDetails?.name || 'Product Name Not Available'}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                              {item.productDetails?.description || 'No description available'}
+                              Product ID: {item.productId}
                             </Typography>
                           </Box>
                         </TableCell>
                         <TableCell>
-                          {item.productDetails?.imageUrl ? (
+                          {(item.imageUrl || item.productDetails?.imageUrl) ? (
                             <CardMedia
                               component="img"
                               sx={{ width: 80, height: 80, objectFit: 'contain' }}
-                              image={item.productDetails.imageUrl}
-                              alt={item.productDetails.name}
+                              image={item.imageUrl || item.productDetails?.imageUrl}
+                              alt={item.productName || item.productDetails?.name || 'Product image'}
                             />
                           ) : (
                             <Box
@@ -331,11 +348,11 @@ const OrderDetails = () => {
                           )}
                         </TableCell>
                         <TableCell align="right">
-                          ${item.productDetails?.price?.toFixed(2) || '0.00'}
+                          ${item.price ? parseFloat(item.price).toFixed(2) : (item.productDetails?.price?.toFixed(2) || '0.00')}
                         </TableCell>
                         <TableCell align="right">{item.quantity}</TableCell>
                         <TableCell align="right">
-                          ${((item.productDetails?.price || 0) * item.quantity).toFixed(2)}
+                          ${(parseFloat(item.price || item.productDetails?.price || 0) * item.quantity).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}

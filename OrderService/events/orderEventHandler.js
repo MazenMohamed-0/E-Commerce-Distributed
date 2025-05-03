@@ -98,7 +98,7 @@ class OrderEventHandler {
 
   async handlePaymentStatusUpdate(event) {
     try {
-      const { orderId, paymentId, status, paymentUrl, error, timestamp } = event.data;
+      const { orderId, paymentId, status, error, timestamp } = event.data;
       
       logger.info('Received payment status update', { orderId, paymentId, status });
       
@@ -118,14 +118,13 @@ class OrderEventHandler {
       const paymentData = {
         status,
         paymentId,
-        paypalPaymentId: paymentId,
         updatedAt: timestamp ? new Date(timestamp) : new Date(),
         error
       };
       
-      // If we have a payment URL, add it
-      if (paymentUrl) {
-        paymentData.paymentUrl = paymentUrl;
+      // If we have Stripe payment data, add it
+      if (event.data.stripePaymentIntentId) {
+        paymentData.stripePaymentIntentId = event.data.stripePaymentIntentId;
       }
       
       // Update the order with payment info
@@ -189,6 +188,12 @@ class OrderEventHandler {
       // Generate a correlation ID for this request
       const correlationId = Date.now().toString();
       
+      // Log the products being validated
+      logger.info('Requesting product validation', {
+        products: JSON.stringify(products),
+        correlationId
+      });
+      
       // Create a promise that will be resolved when we receive the response
       const validationPromise = new Promise(async (resolve, reject) => {
         let queueName;
@@ -205,6 +210,33 @@ class OrderEventHandler {
             (message) => {
               if (message.correlationId === correlationId) {
                 clearTimeout(timeoutId);
+                
+                // Log the validation response
+                if (message.data && message.data.validationResults) {
+                  const invalidItems = message.data.validationResults
+                    .filter(result => !result.isValid || !result.hasStock)
+                    .map(result => ({
+                      productId: result.productId,
+                      valid: result.isValid,
+                      hasStock: result.hasStock,
+                      currentStock: result.currentStock,
+                      error: result.error
+                    }));
+                  
+                  if (invalidItems.length > 0) {
+                    logger.error('Product validation failed', {
+                      invalid: invalidItems,
+                      isValid: message.data.isValid,
+                      message: message.data.message
+                    });
+                  } else {
+                    logger.info('Product validation successful', {
+                      isValid: message.data.isValid,
+                      message: message.data.message
+                    });
+                  }
+                }
+                
                 resolve(message.data);
               }
             }
@@ -219,6 +251,8 @@ class OrderEventHandler {
               replyTo: `response.${correlationId}`
             }
           });
+          
+          logger.info('Product validation request sent', { correlationId });
         } catch (error) {
           clearTimeout(timeoutId);
           reject(error);

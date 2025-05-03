@@ -235,13 +235,10 @@ class ProductEventHandler {
       const { correlationId, data } = message;
       const { products, replyTo } = data;
 
-      console.log('Validating products:', products);
-
-      // Use a transaction to update stock
-      const session = await mongoose.startSession();
-      session.startTransaction();
+      console.log('Validating products:', JSON.stringify(products));
 
       try {
+        // First phase: Just validate products without modifying stock
         const validationResults = await Promise.all(
           products.map(async (item) => {
             if (!item || !item.productId) {
@@ -257,6 +254,7 @@ class ProductEventHandler {
             try {
               // Check if the productId is a valid ObjectId
               if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+                console.log(`Invalid product ID format: ${item.productId}`);
                 return {
                   productId: item.productId,
                   isValid: false,
@@ -266,54 +264,32 @@ class ProductEventHandler {
                 };
               }
 
-              // Find and update product stock atomically
-              const product = await Product.findOneAndUpdate(
-                {
-                  _id: item.productId,
-                  stock: { $gte: item.quantity }
-                },
-                {
-                  $inc: { stock: -item.quantity }
-                },
-                {
-                  new: true,
-                  session
-                }
-              );
-
-              console.log(`Product ${item.productId} found:`, product);
+              // Find product without modifying stock yet
+              const product = await Product.findById(item.productId);
               
               if (!product) {
-                const originalProduct = await Product.findById(item.productId);
+                console.log(`Product not found: ${item.productId}`);
                 return {
                   productId: item.productId,
-                  isValid: !!originalProduct,
+                  isValid: false,
                   hasStock: false,
-                  currentStock: originalProduct ? originalProduct.stock : 0,
-                  error: !originalProduct ? 'Product not found' : 'Insufficient stock',
-                  productDetails: originalProduct ? {
-                    name: originalProduct.name,
-                    price: originalProduct.price,
-                    sellerId: originalProduct.createdBy
-                  } : null
+                  currentStock: 0,
+                  error: 'Product not found',
+                  productDetails: null
                 };
               }
 
-              // Publish stock update event
-              await this.publishProductEvent(eventTypes.PRODUCT_STOCK_UPDATED, {
-                productId: product._id,
-                newStock: product.stock,
-                oldStock: product.stock + item.quantity,
-                change: -item.quantity
-              });
+              // Check if there's enough stock
+              const hasEnoughStock = product.stock >= item.quantity;
+              console.log(`Product ${item.productId} (${product.name}): available stock=${product.stock}, requested=${item.quantity}, has enough=${hasEnoughStock}`);
               
               return {
                 productId: item.productId,
                 isValid: true,
-                hasStock: true,
+                hasStock: hasEnoughStock,
                 currentStock: product.stock,
-                previousStock: product.stock + item.quantity,
-                error: null,
+                previousStock: product.stock,
+                error: !hasEnoughStock ? `Insufficient stock (available: ${product.stock}, requested: ${item.quantity})` : null,
                 productDetails: {
                   name: product.name,
                   price: product.price,
@@ -333,20 +309,17 @@ class ProductEventHandler {
           })
         );
 
-        console.log('Validation results:', validationResults);
+        // Log detailed validation results for each product
+        console.log('Detailed validation results:');
+        validationResults.forEach(result => {
+          console.log(`- Product ${result.productId}: Valid=${result.isValid}, HasStock=${result.hasStock}, Stock=${result.currentStock}`);
+          if (!result.isValid || !result.hasStock) {
+            console.log(`  Error: ${result.error}`);
+          }
+        });
 
         // Check if all products are valid and have sufficient stock
         const allProductsValid = validationResults.every(result => result.isValid && result.hasStock);
-
-        if (!allProductsValid) {
-          // Rollback the transaction if validation fails
-          await session.abortTransaction();
-          console.log('Transaction rolled back due to validation failure');
-        } else {
-          // Commit the transaction if all validations pass
-          await session.commitTransaction();
-          console.log('Transaction committed successfully');
-        }
 
         const response = {
           type: replyTo,
@@ -355,24 +328,20 @@ class ProductEventHandler {
             isValid: allProductsValid,
             validationResults,
             message: allProductsValid ? 
-              'All products are valid and stock has been reserved' : 
+              'All products are valid and have sufficient stock' : 
               'Some products are invalid or out of stock'
           }
         };
 
-        console.log('Sending validation response:', response);
+        console.log('Sending validation response:', JSON.stringify(response.data));
 
         // Send validation response
         await rabbitmq.publish('product-events', replyTo, response);
 
         logger.info('Product validation response sent', { correlationId });
       } catch (error) {
-        // Rollback the transaction on error
-        await session.abortTransaction();
-        console.log('Transaction rolled back due to error:', error);
+        console.log('Error during validation:', error);
         throw error;
-      } finally {
-        session.endSession();
       }
     } catch (error) {
       logger.error('Error handling product validation request:', error);
@@ -392,11 +361,9 @@ class ProductEventHandler {
 
       console.log('Sending error response:', errorResponse);
       
-      await rabbitmq.publish(
-        'product-events', 
-        message?.data?.replyTo || 'product.validation.response',
-        errorResponse
-      );
+      if (message?.data?.replyTo) {
+        await rabbitmq.publish('product-events', message.data.replyTo, errorResponse);
+      }
     }
   }
 }

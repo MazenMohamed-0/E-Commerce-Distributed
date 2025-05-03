@@ -32,14 +32,32 @@ const Checkout = () => {
   const { cartItems, getTotal, clearCart } = useCart();
   const { user, token } = useAuth();
   const [activeStep, setActiveStep] = useState(0);
-  const [shippingAddress, setShippingAddress] = useState('');
-  const [paymentType, setPaymentType] = useState('cash');
+  const [shippingAddress, setShippingAddress] = useState({
+    fullName: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: 'US',
+    phoneNumber: ''
+  });
+  const [paymentType, setPaymentType] = useState('stripe');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [orderPolling, setOrderPolling] = useState(null);
   const [orderStatus, setOrderStatus] = useState(null);
   const [pollingCount, setPollingCount] = useState(0);
+
+  // Add a new const for the processing step
+  const PROCESSING_STEP = steps.length;
+
+  // Add a new effect to clear idempotency key when component mounts
+  useEffect(() => {
+    // Clear any existing idempotency key when the checkout page is loaded
+    localStorage.removeItem('checkoutIdempotencyKey');
+  }, []); // Empty dependency array means this runs once when component mounts
 
   // Redirect to cart if cart is empty
   useEffect(() => {
@@ -69,9 +87,14 @@ const Checkout = () => {
   
   // New function to poll order status
   const pollOrderStatus = async (orderId) => {
-    if (!orderId || !token) return;
+    if (!orderId || !token) {
+      console.error('Cannot poll order status: missing orderId or token');
+      return;
+    }
     
     try {
+      console.log(`Polling order status for orderId: ${orderId}`);
+      
       const response = await axios.get(
         `http://localhost:3004/orders/${orderId}/status`,
         {
@@ -79,28 +102,64 @@ const Checkout = () => {
         }
       );
       
+      console.log('Order status response:', response.data);
       setOrderStatus(response.data);
       
       // Handle different status cases
       switch(response.data.status) {
         case 'payment_pending':
-          // Check if we have a payment URL in the payment object
-          if (response.data.paymentUrl || 
-             (response.data.payment && response.data.payment.paymentUrl)) {
-            // Store order info and redirect to PayPal
-            localStorage.setItem('pendingOrderId', orderId);
-            window.location.href = response.data.paymentUrl || response.data.payment.paymentUrl;
-            clearInterval(orderPolling);
-            return;
+          // For Stripe payment method, check if we have client secret
+          if (paymentType === 'stripe') {
+            // Get the client secret from the response - check all possible locations
+            const clientSecret = response.data.stripeClientSecret || 
+                               response.data.payment?.stripeClientSecret || 
+                               response.data.payment?.clientSecret ||
+                               (response.data.order && response.data.order.payment?.stripeClientSecret);
+            
+            console.log('Checking for Stripe client secret:', {
+              hasTopLevelSecret: !!response.data.stripeClientSecret,
+              hasPaymentSecret: !!response.data.payment?.stripeClientSecret,
+              hasAltPaymentSecret: !!response.data.payment?.clientSecret,
+              hasOrderSecret: !!(response.data.order && response.data.order.payment?.stripeClientSecret),
+              foundSecret: !!clientSecret
+            });
+            
+            if (clientSecret) {
+              // Store order info for later reference
+              localStorage.setItem('pendingOrderId', orderId);
+              // Clear the idempotency key since we're proceeding with this order
+              localStorage.removeItem('checkoutIdempotencyKey');
+              
+              console.log('Got Stripe client secret, redirecting to payment page');
+              
+              // Add a small delay to ensure everything is saved
+              setTimeout(() => {
+                // Navigate to Stripe payment page
+                navigate(`/payment/stripe?orderId=${orderId}`);
+              }, 500);
+              
+              clearInterval(orderPolling);
+              return;
+            } else {
+              console.error('No Stripe client secret found in response', response.data);
+              setError('Payment information not found. Please try again or contact support.');
+              clearInterval(orderPolling);
+              return;
+            }
           }
+          // For cash payment, we can proceed as normal
           break;
           
+        case 'payment_completed':
         case 'completed':
           // Success! Clear cart and redirect
           setSuccess('Order completed successfully!');
           clearCart();
+          // Clear checkout data
+          localStorage.removeItem('checkoutIdempotencyKey');
+          localStorage.removeItem('pendingOrderId');
           clearInterval(orderPolling);
-          navigate('/orders/' + orderId);
+          navigate('/order/' + orderId);
           return;
           
         case 'failed':
@@ -119,7 +178,7 @@ const Checkout = () => {
           if (pollingCount > 30) {
             clearInterval(orderPolling);
             setError('Order processing is taking longer than expected. Please check order status page.');
-            navigate('/orders');
+            navigate('/my-orders');
           }
       }
     } catch (err) {
@@ -145,9 +204,14 @@ const Checkout = () => {
 
   const handleNext = () => {
     // Validate current step
-    if (activeStep === 0 && !shippingAddress.trim()) {
-      setError('Please enter your shipping address');
-      return;
+    if (activeStep === 0) {
+      const requiredFields = ['fullName', 'addressLine1', 'city', 'state', 'postalCode', 'country', 'phoneNumber'];
+      const missingFields = requiredFields.filter(field => !shippingAddress[field]);
+      
+      if (missingFields.length > 0) {
+        setError(`Please complete all required shipping information: ${missingFields.join(', ')}`);
+        return;
+      }
     }
 
     if (activeStep === steps.length - 1) {
@@ -172,22 +236,57 @@ const Checkout = () => {
         throw new Error('You must be logged in to place an order');
       }
 
+      // Check if we have cart items
+      if (!cartItems || cartItems.length === 0) {
+        throw new Error('Your cart is empty');
+      }
+
       // Generate idempotency key for this checkout session
       const idempotencyKey = generateIdempotencyKey();
 
-      // Prepare order data
+      // Calculate total amount
+      const totalAmount = getTotal();
+
+      // Log cart items to check their structure
+      console.log('Cart items before preparing order:', cartItems);
+
+      // Prepare order data with proper item details and shipping address
       const orderData = {
-        items: cartItems.map(item => ({
-          productId: item.productId,
-          sellerId: item.sellerId, 
-          quantity: item.quantity,
-          price: item.price
-        })),
-        shippingAddress,
+        items: cartItems.map(item => {
+          // Ensure we have all required fields
+          if (!item.productId) {
+            console.error('Missing productId in cart item:', item);
+            throw new Error('Invalid cart item: missing productId');
+          }
+
+          // Make sure we have sellerId - either from the item directly or try to get it from other fields
+          const sellerId = item.sellerId || item.createdBy || item.seller?._id;
+          
+          if (!sellerId) {
+            console.error('Missing sellerId in cart item:', item);
+            throw new Error('Invalid cart item: missing sellerId');
+          }
+          
+          if (!item.name) {
+            console.error('Missing name in cart item:', item);
+            throw new Error('Invalid cart item: missing product name');
+          }
+
+          return {
+            productId: item.productId.toString(),
+            sellerId: sellerId.toString(),
+            productName: item.name,
+            quantity: parseInt(item.quantity),
+            price: parseFloat(item.price),
+            imageUrl: item.imageUrl || ''
+          };
+        }),
+        shippingAddress: shippingAddress,
+        totalAmount: parseFloat(totalAmount),
         paymentMethod: paymentType
       };
 
-      console.log('Submitting order with data:', orderData);
+      console.log('Submitting order with data:', JSON.stringify(orderData, null, 2));
 
       // Submit order to Order Service with idempotency key
       const response = await axios.post(
@@ -207,31 +306,60 @@ const Checkout = () => {
       // Show initial status
       setOrderStatus(response.data);
       
-      // Start polling for order status updates
-      const orderId = response.data.orderId;
+      // Extract orderId from the response - handle different response formats
+      let orderId = null;
+      
+      // Try to get orderId directly from the response
+      if (response.data && response.data.orderId) {
+        orderId = response.data.orderId;
+      } 
+      // If not available, try to get from the order object if present
+      else if (response.data && response.data.order && response.data.order._id) {
+        orderId = response.data.order._id;
+      }
+      
+      console.log('Extracted orderId:', orderId);
+      
+      // Show processing status
+      setSuccess('Order created! Processing your order...');
+      
+      // Set activeStep to the processing step
+      setActiveStep(PROCESSING_STEP);
+      
+      // Use the order ID to start polling
       if (orderId) {
         // Set up polling interval (every 2 seconds)
         const interval = setInterval(() => pollOrderStatus(orderId), 2000);
         setOrderPolling(interval);
-        
-        // Show processing status
-        setSuccess('Order created! Processing your order...');
-        
-        // Set activeStep to a new "processing" step
-        setActiveStep(steps.length); // This will show our custom processing step
       } else {
         throw new Error('No order ID received from server');
       }
     } catch (err) {
       console.error('Error creating order:', err);
-      // Check if this was a duplicate order (already exists with same idempotency key)
-      if (err.response?.status === 200 && err.response?.data?.order) {
+      // Check if this is a response with orderId (possibly a duplicate order)
+      if (err.response?.data?.orderId) {
+        const existingOrderId = err.response.data.orderId;
+        console.log('Found existing order ID:', existingOrderId);
         setSuccess('Order already exists! Redirecting to order status...');
-        navigate(`/orders/${err.response.data.order._id}`);
+        
+        // Start polling for existing order
+        const interval = setInterval(() => pollOrderStatus(existingOrderId), 2000);
+        setOrderPolling(interval);
+        
+        // Set activeStep to processing step
+        setActiveStep(PROCESSING_STEP);
+        return;
+      }
+      // Legacy check for backward compatibility
+      else if (err.response?.status === 200 && err.response?.data?.order) {
+        const existingOrderId = err.response.data.order._id;
+        console.log('Found existing order via legacy path:', existingOrderId);
+        setSuccess('Order already exists! Redirecting to order status...');
+        navigate(`/order/${existingOrderId}`);
         return;
       }
       
-      setError(err.response?.data?.message || 'Failed to create order. Please try again.');
+      setError(err.response?.data?.message || err.message || 'Failed to create order. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -242,17 +370,82 @@ const Checkout = () => {
       <Typography variant="h6" gutterBottom>
         Shipping Address
       </Typography>
-      <TextField
-        required
-        fullWidth
-        multiline
-        rows={4}
-        label="Full Address"
-        value={shippingAddress}
-        onChange={(e) => setShippingAddress(e.target.value)}
-        placeholder="Street, City, State, ZIP Code, Country"
-        sx={{ mb: 2 }}
-      />
+      <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <TextField
+            required
+            fullWidth
+            label="Full Name"
+            value={shippingAddress.fullName}
+            onChange={(e) => setShippingAddress({...shippingAddress, fullName: e.target.value})}
+          />
+        </Grid>
+        <Grid item xs={12}>
+          <TextField
+            required
+            fullWidth
+            label="Address Line 1"
+            value={shippingAddress.addressLine1}
+            onChange={(e) => setShippingAddress({...shippingAddress, addressLine1: e.target.value})}
+            placeholder="Street address, P.O. box, company name"
+          />
+        </Grid>
+        <Grid item xs={12}>
+          <TextField
+            fullWidth
+            label="Address Line 2"
+            value={shippingAddress.addressLine2}
+            onChange={(e) => setShippingAddress({...shippingAddress, addressLine2: e.target.value})}
+            placeholder="Apartment, suite, unit, building, floor, etc."
+          />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField
+            required
+            fullWidth
+            label="City"
+            value={shippingAddress.city}
+            onChange={(e) => setShippingAddress({...shippingAddress, city: e.target.value})}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField
+            required
+            fullWidth
+            label="State/Province/Region"
+            value={shippingAddress.state}
+            onChange={(e) => setShippingAddress({...shippingAddress, state: e.target.value})}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField
+            required
+            fullWidth
+            label="Zip / Postal code"
+            value={shippingAddress.postalCode}
+            onChange={(e) => setShippingAddress({...shippingAddress, postalCode: e.target.value})}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField
+            required
+            fullWidth
+            label="Country"
+            value={shippingAddress.country}
+            onChange={(e) => setShippingAddress({...shippingAddress, country: e.target.value})}
+            defaultValue="US"
+          />
+        </Grid>
+        <Grid item xs={12}>
+          <TextField
+            required
+            fullWidth
+            label="Phone Number"
+            value={shippingAddress.phoneNumber}
+            onChange={(e) => setShippingAddress({...shippingAddress, phoneNumber: e.target.value})}
+          />
+        </Grid>
+      </Grid>
     </Box>
   );
 
@@ -262,15 +455,40 @@ const Checkout = () => {
         Payment Method
       </Typography>
       <FormControl component="fieldset">
-        <FormLabel component="legend">Select Payment Method</FormLabel>
+        <FormLabel component="legend">Select a payment method</FormLabel>
         <RadioGroup
+          aria-label="payment-method"
+          name="payment-method"
           value={paymentType}
           onChange={(e) => setPaymentType(e.target.value)}
         >
+          <FormControlLabel
+            value="stripe"
+            control={<Radio />}
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <img 
+                  src="https://upload.wikimedia.org/wikipedia/commons/b/ba/Stripe_Logo%2C_revised_2016.svg" 
+                  alt="Stripe"
+                  height="20"
+                />
+                <Typography>Credit Card (Stripe)</Typography>
+              </Box>
+            }
+          />
           <FormControlLabel value="cash" control={<Radio />} label="Cash on Delivery" />
-          <FormControlLabel value="paypal" control={<Radio />} label="PayPal" />
         </RadioGroup>
       </FormControl>
+      
+      {paymentType === 'stripe' ? (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          You'll complete your payment securely after confirming your order.
+        </Alert>
+      ) : (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          You'll pay when your order is delivered.
+        </Alert>
+      )}
     </Box>
   );
 
@@ -302,14 +520,21 @@ const Checkout = () => {
         Shipping Details
       </Typography>
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-        <Typography>{shippingAddress}</Typography>
+        <Typography>{shippingAddress.fullName}</Typography>
+        <Typography>{shippingAddress.addressLine1}</Typography>
+        {shippingAddress.addressLine2 && <Typography>{shippingAddress.addressLine2}</Typography>}
+        <Typography>
+          {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postalCode}
+        </Typography>
+        <Typography>{shippingAddress.country}</Typography>
+        <Typography>Phone: {shippingAddress.phoneNumber}</Typography>
       </Paper>
 
       <Typography variant="h6" gutterBottom>
         Payment Method
       </Typography>
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography>{paymentType === 'cash' ? 'Cash on Delivery' : 'PayPal'}</Typography>
+        <Typography>{paymentType === 'cash' ? 'Cash on Delivery' : 'Stripe'}</Typography>
       </Paper>
     </Box>
   );
@@ -341,7 +566,7 @@ const Checkout = () => {
       
       <Button 
         variant="outlined" 
-        onClick={() => navigate('/orders')}
+        onClick={() => navigate('/my-orders')}
         sx={{ mt: 2 }}
       >
         View All Orders
@@ -357,7 +582,8 @@ const Checkout = () => {
         return renderPaymentForm();
       case 2:
         return renderOrderSummary();
-      case 3: // New processing step
+      case 3: // Processing step
+      case PROCESSING_STEP: // This ensures we handle both ways of setting the step
         return renderProcessingStep();
       default:
         return 'Unknown step';
