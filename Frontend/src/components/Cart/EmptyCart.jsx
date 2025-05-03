@@ -24,7 +24,7 @@ const EmptyCart = () => {
       <Button
         variant="contained"
         color="primary"
-        onClick={() => navigate('/')}
+        onClick={() => navigate('/home')}
       >
         Continue Shopping
       </Button>

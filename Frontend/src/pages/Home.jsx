@@ -9,7 +9,7 @@ import {
 import axios from 'axios';
 import config from '../config';
 import ProductGrid from '../components/Product/ProductGrid';
-import Navbar from '../components/Navbar';
+
 
 const Home = () => {
   const [products, setProducts] = useState([]);
@@ -53,14 +53,13 @@ const Home = () => {
 
   return (
     <>
-      <Navbar />
       <Container maxWidth="lg">
         <Box sx={{ my: 4 }}>
           <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
             <Typography variant="h4" gutterBottom>
               Welcome to Our Marketplace
             </Typography>
-            <Typography variant="body1" color="text.secondary">
+            <Typography variant="body1">
               Browse our collection of products from various sellers
             </Typography>
           </Paper>

@@ -204,7 +204,7 @@ export const Login = () => {
   };
 
   return (
-    <Container component="main" maxWidth="xs">
+    <Container maxWidth="md" sx={{ py: 8 }}>
       <Box
         sx={{
           marginTop: 8,
@@ -213,7 +213,7 @@ export const Login = () => {
           alignItems: 'center',
         }}
       >
-        <Typography component="h1" variant="h5">
+        <Typography variant="h4" fontWeight="bold" gutterBottom>
           Sign In
         </Typography>
         
@@ -258,6 +258,7 @@ export const Login = () => {
             required
             fullWidth
             id="email"
+            placeholder="your@email.com"
             label="Email Address"
             name="email"
             autoComplete="email"
@@ -271,6 +272,7 @@ export const Login = () => {
             fullWidth
             name="password"
             label="Password"
+            placeholder="Your Password"
             type="password"
             id="password"
             autoComplete="current-password"
@@ -278,13 +280,16 @@ export const Login = () => {
             onChange={(e) => setPassword(e.target.value)}
           />
           <Button
-            type="submit"
             fullWidth
             variant="contained"
+            color="primary"
+            type="submit"
             sx={{ mt: 3, mb: 2 }}
+            disabled={loading}
           >
-            Sign In
+            {loading ? 'Signing in...' : 'Sign In'}
           </Button>
+          <Divider sx={{ my: 2 }}>or</Divider>
           <Button
             fullWidth
             variant="outlined"
@@ -309,3 +314,5 @@ export const Login = () => {
 };
 
 export default Login; 
+
+

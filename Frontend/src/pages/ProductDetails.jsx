@@ -14,7 +14,6 @@ import {
 } from '@mui/material';
 import { ShoppingCart, ArrowBack } from '@mui/icons-material';
 import axios from 'axios';
-import Navbar from '../components/Navbar';
 import ProductImage from '../components/Product/ProductImage';
 import ProductInfo from '../components/Product/ProductInfo';
 
@@ -66,7 +65,6 @@ const ProductDetails = () => {
 
   return (
     <>
-      <Navbar />
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Button
           startIcon={<ArrowBack />}

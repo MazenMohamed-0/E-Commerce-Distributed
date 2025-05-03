@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -10,17 +10,20 @@ import {
   MenuItem,
   Typography,
   Badge,
-  IconButton
+  IconButton,
 } from '@mui/material';
 import { ShoppingCart } from '@mui/icons-material';
 import { useAuth } from '../context/hooks';
 import { useCart } from '../context/CartContext';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkModeOutlined'; 
 
-const Navbar = () => {
+
+const Navbar = ({ isDarkMode, toggleTheme }) => {
   const { user, logout } = useAuth();
   const { getCartCount } = useCart();
   const navigate = useNavigate();
-  const [anchorEl, setAnchorEl] = React.useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
 
   const handleProfileClick = (event) => {
     setAnchorEl(event.currentTarget);
@@ -44,23 +47,29 @@ const Navbar = () => {
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography 
-          variant="h6" 
-          component="div" 
+        <Typography
+          variant="h6"
+          component="div"
           sx={{ flexGrow: 1, cursor: 'pointer' }}
           onClick={() => navigate('/')}
         >
-          E-Commerce
+          SAWA'LY
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton 
-            color="inherit"
-            onClick={() => navigate('/cart')}
-          >
+          <IconButton color="inherit" onClick={() => navigate('/cart')}>
             <Badge badgeContent={getCartCount()} color="error">
               <ShoppingCart />
             </Badge>
+          </IconButton>
+
+          {/* Theme Toggler */}
+          <IconButton
+            onClick={toggleTheme}
+            color="inherit"
+
+          >
+            {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
 
           {user ? (
@@ -95,4 +104,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar; 
+export default Navbar;
