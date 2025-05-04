@@ -16,6 +16,12 @@ class PaymentService {
   // Create a payment using Stripe
   async createStripePayment(orderData) {
     try {
+      console.log('DEBUG: Starting createStripePayment', {
+        orderId: orderData.orderId,
+        amount: orderData.amount,
+        currency: orderData.currency || 'USD'
+      });
+      
       // Create a new payment record
       const payment = new Payment({
         orderId: orderData.orderId,
@@ -33,47 +39,68 @@ class PaymentService {
       const isLikelyCents = Number.isInteger(payment.amount) && payment.amount >= 100;
       const stripeAmount = isLikelyCents ? payment.amount : Math.round(payment.amount * 100);
       
+      console.log('DEBUG: Calculated stripe amount:', {
+        originalAmount: payment.amount,
+        isLikelyCents,
+        stripeAmount
+      });
+      
       // Add idempotency key to prevent duplicate payments
       const idempotencyKey = orderData.idempotencyKey || `order_${payment.orderId}_${Date.now()}`;
       
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: stripeAmount, // Use the appropriate amount
+      console.log('DEBUG: Creating Stripe payment intent with params:', {
+        amount: stripeAmount,
         currency: payment.currency.toLowerCase(),
-        metadata: {
-          orderId: payment.orderId,
-          userId: payment.userId
-        },
-        description: `Payment for order ${payment.orderId}`,
-        automatic_payment_methods: {
-          enabled: true
-        }
-      }, {
+        orderId: payment.orderId,
         idempotencyKey
       });
       
-      // Update payment with Stripe data
-      payment.stripePaymentIntentId = paymentIntent.id;
-      payment.stripeClientSecret = paymentIntent.client_secret;
-      payment.status = 'pending';
-      await payment.save();
-      
-      return {
-        paymentId: payment._id,
-        orderId: payment.orderId,
-        stripePaymentIntentId: paymentIntent.id,
-        stripeClientSecret: paymentIntent.client_secret,
-        status: 'created',
-        success: true
-      };
-    } catch (error) {
-      // Check for Stripe errors
-      if (error.type === 'StripeCardError') {
-        throw new Error(`Card error: ${error.message}`);
-      } else if (error.type === 'StripeInvalidRequestError') {
-        throw new Error(`Invalid request: ${error.message}`);
-      } else {
-        throw new Error(`Failed to create Stripe payment: ${error.message}`);
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: stripeAmount, // Use the appropriate amount
+          currency: payment.currency.toLowerCase(),
+          metadata: {
+            orderId: payment.orderId,
+            userId: payment.userId
+          },
+          description: `Payment for order ${payment.orderId}`,
+          automatic_payment_methods: {
+            enabled: true
+          }
+        }, {
+          idempotencyKey
+        });
+        
+        console.log('DEBUG: Stripe payment intent created successfully:', {
+          paymentIntentId: paymentIntent.id,
+          status: paymentIntent.status,
+          hasClientSecret: !!paymentIntent.client_secret
+        });
+        
+        // Update payment with Stripe data
+        payment.stripePaymentIntentId = paymentIntent.id;
+        payment.stripeClientSecret = paymentIntent.client_secret;
+        payment.status = 'pending';
+        
+        console.log('DEBUG: Saving payment to database');
+        await payment.save();
+        console.log('DEBUG: Payment saved successfully with ID:', payment._id);
+        
+        return {
+          paymentId: payment._id,
+          orderId: payment.orderId,
+          stripePaymentIntentId: paymentIntent.id,
+          stripeClientSecret: paymentIntent.client_secret,
+          status: 'created',
+          success: true
+        };
+      } catch (stripeError) {
+        console.error('DEBUG: Stripe payment intent creation failed:', stripeError);
+        throw new Error(`Stripe payment intent creation failed: ${stripeError.message}`);
       }
+    } catch (error) {
+      console.error('DEBUG: Error in createStripePayment:', error);
+      throw error;
     }
   }
   
@@ -118,21 +145,35 @@ class PaymentService {
   // Confirm Stripe payment
   async confirmStripePayment(paymentIntentId) {
     try {
+      console.log('DEBUG: Starting confirmStripePayment for payment intent:', paymentIntentId);
+      
       const payment = await Payment.findOne({ stripePaymentIntentId: paymentIntentId });
       if (!payment) {
+        console.log('DEBUG: Payment not found for payment intent ID:', paymentIntentId);
         throw new Error('Payment not found');
       }
+      
+      console.log('DEBUG: Found payment record:', {
+        paymentId: payment._id,
+        orderId: payment.orderId,
+        status: payment.status
+      });
 
       // Retrieve payment intent from Stripe
+      console.log('DEBUG: Retrieving payment intent from Stripe');
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      console.log('DEBUG: Retrieved payment intent with status:', paymentIntent.status);
       
       // Check if the payment intent was successful
       if (paymentIntent.status === 'succeeded') {
+        console.log('DEBUG: Payment intent status is succeeded, updating payment');
         // Update payment status
         payment.status = 'completed';
         await payment.save();
+        console.log('DEBUG: Payment status updated to completed');
 
         // Publish payment completed event to update order status
+        console.log('DEBUG: Publishing payment completed event');
         const paymentEventHandler = require('../events/paymentEventHandler');
         await paymentEventHandler.publishPaymentCompletedEvent({
           orderId: payment.orderId,
@@ -141,6 +182,7 @@ class PaymentService {
           status: 'completed',
           timestamp: new Date()
         });
+        console.log('DEBUG: Payment completed event published');
 
         return {
           paymentId: payment._id,
@@ -148,6 +190,7 @@ class PaymentService {
           status: payment.status
         };
       } else {
+        console.log('DEBUG: Payment intent status is not succeeded:', paymentIntent.status);
         payment.status = 'failed';
         payment.error = {
           message: `Payment intent status: ${paymentIntent.status}`,
@@ -155,8 +198,10 @@ class PaymentService {
           timestamp: new Date()
         };
         await payment.save();
+        console.log('DEBUG: Payment status updated to failed');
         
         // Publish payment failed event
+        console.log('DEBUG: Publishing payment failed event');
         const paymentEventHandler = require('../events/paymentEventHandler');
         await paymentEventHandler.publishPaymentFailedEvent({
           orderId: payment.orderId,
@@ -165,10 +210,12 @@ class PaymentService {
           status: 'failed',
           timestamp: new Date()
         });
+        console.log('DEBUG: Payment failed event published');
         
         throw new Error(`Payment intent not succeeded. Status: ${paymentIntent.status}`);
       }
     } catch (error) {
+      console.error('DEBUG: Error in confirmStripePayment:', error);
       throw new Error(`Failed to confirm payment: ${error.message}`);
     }
   }

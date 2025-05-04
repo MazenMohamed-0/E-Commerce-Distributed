@@ -110,7 +110,7 @@ const PaymentSuccess = () => {
         // Get orderId from URL or localStorage
         const orderId = params.get('orderId') || localStorage.getItem('pendingOrderId');
         
-        console.log('Payment completion data:', { paymentId, payerId, orderId });
+        console.log('Payment completed for order:', orderId);
         
         if (!paymentId || !payerId || !orderId) {
           throw new Error('Missing payment information');
@@ -127,7 +127,7 @@ const PaymentSuccess = () => {
           { headers: { Authorization: `Bearer ${token}` } }
         );
         
-        console.log('Payment execution response:', response.data);
+        console.log('Payment execution completed successfully');
         
         setOrderId(orderId);
         

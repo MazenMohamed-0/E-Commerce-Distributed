@@ -16,7 +16,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import Navbar from '../components/Navbar';
 
 // Stripe public key
-const stripePromise = loadStripe('pk_test_51RKSD3PMNHEuOAn3NdKG49tCTAVd2ULBxZyyqnw2A2FZYpa6s7XJmemez7i9581omBQoPgKxk0L86d2ToCXLcICe00PN0VHHoE');
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 // Stripe Payment Form Component
 const StripeCheckoutForm = ({ orderId, onSuccess, onError }) => {
@@ -29,51 +29,43 @@ const StripeCheckoutForm = ({ orderId, onSuccess, onError }) => {
     event.preventDefault();
 
     if (!stripe || !elements) {
-      console.log('Stripe.js has not yet loaded');
       return;
     }
 
     setIsProcessing(true);
     setErrorMessage('');
-    
-    console.log('Processing payment for order:', orderId);
 
     try {
       // Confirm payment with Stripe
-      console.log('Confirming payment with client secret');
-      
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + '/order', // Redirect to orders page after payment
+          return_url: window.location.origin + `/order/${orderId}`, // Use orderId here
         },
         redirect: 'if_required',
       });
 
       if (error) {
-        console.error('Stripe payment error:', error);
+        console.error('Payment error:', error.message);
         setErrorMessage(error.message);
         onError(error.message);
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
         // Payment successful
-        console.log('Payment intent succeeded:', paymentIntent.id);
         try {
           // Notify backend about successful payment
-          const confirmResponse = await axios.post(
+          await axios.post(
             'http://localhost:3005/payments/stripe/confirm', 
             { paymentIntentId: paymentIntent.id },
             { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
           );
-          console.log('Payment confirmation response:', confirmResponse.data);
           onSuccess(paymentIntent);
         } catch (apiError) {
-          console.error('Error confirming payment with server:', apiError);
+          console.error('Error confirming payment with server:', apiError.message);
           setErrorMessage('Payment succeeded but failed to confirm with server.');
           onError(apiError.message);
         }
       } else {
         // Payment requires additional action
-        console.log('Payment intent status:', paymentIntent?.status);
         if (paymentIntent && paymentIntent.status === 'requires_action') {
           setErrorMessage('This payment requires additional verification steps.');
         } else {
@@ -81,7 +73,7 @@ const StripeCheckoutForm = ({ orderId, onSuccess, onError }) => {
         }
       }
     } catch (err) {
-      console.error('Unexpected payment error:', err);
+      console.error('Unexpected payment error:', err.message);
       setErrorMessage('An unexpected error occurred.');
       onError(err.message);
     } finally {
@@ -151,7 +143,6 @@ const StripePayment = () => {
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         
-        console.log('Order status response:', response.data);
         setOrderDetails(response.data);
         
         // Extract the client secret from the response
@@ -160,8 +151,6 @@ const StripePayment = () => {
                       (response.data.order && response.data.order.payment?.stripeClientSecret);
         
         if (!secret) {
-          console.log('No client secret found in order response, attempting to create payment directly');
-          
           try {
             // Try to directly create a payment for the order if no client secret is found
             const paymentResponse = await axios.post(
@@ -175,8 +164,6 @@ const StripePayment = () => {
               { headers: { 'Authorization': `Bearer ${token}` } }
             );
             
-            console.log('Created payment directly:', paymentResponse.data);
-            
             if (paymentResponse.data && paymentResponse.data.stripeClientSecret) {
               setClientSecret(paymentResponse.data.stripeClientSecret);
               setLoading(false);
@@ -187,7 +174,7 @@ const StripePayment = () => {
               return;
             }
           } catch (paymentError) {
-            console.error('Error creating payment directly:', paymentError);
+            console.error('Error creating payment for order:', id);
             setError('Failed to create payment. Please try again or contact support.');
             setLoading(false);
             return;
@@ -197,7 +184,7 @@ const StripePayment = () => {
         setClientSecret(secret);
         setLoading(false);
       } catch (err) {
-        console.error('Error fetching payment details:', err);
+        console.error('Error fetching payment details');
         setError(err.response?.data?.message || 'Failed to load payment information');
         setLoading(false);
       }

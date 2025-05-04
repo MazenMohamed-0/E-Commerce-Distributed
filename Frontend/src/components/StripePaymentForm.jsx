@@ -7,7 +7,16 @@ import config from '../config';
 import { Box, Button, Typography, Alert, CircularProgress } from '@mui/material';
 
 // Stripe public key
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+const STRIPE_PK = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+console.log('DEBUG: Stripe publishable key available:', !!STRIPE_PK);
+
+// Initialize Stripe only if the key exists
+const stripePromise = STRIPE_PK 
+  ? loadStripe(STRIPE_PK).catch(err => {
+      console.error('DEBUG: Error loading Stripe:', err);
+      return null;
+    })
+  : Promise.resolve(null);
 
 // Actual payment form component
 const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
@@ -24,16 +33,18 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
       if (!stripe || !clientSecret || isPaymentVerified) return;
       
       try {
-        console.log('Checking payment status on component mount...');
+        console.log('DEBUG: Checking payment status with clientSecret');
         const { paymentIntent } = await stripe.retrievePaymentIntent(clientSecret);
         
+        console.log('DEBUG: Payment intent retrieved:', paymentIntent.status);
+        
         if (paymentIntent && paymentIntent.status === 'succeeded') {
-          console.log('Payment already complete, confirming with server');
+          console.log('DEBUG: Payment already succeeded, handling success');
           setIsPaymentVerified(true);
           handlePaymentSuccess(paymentIntent);
         }
       } catch (error) {
-        console.error('Error checking payment status on load:', error);
+        console.error('DEBUG: Error checking payment status:', error.message);
         setErrorMessage('Error checking payment status. Please try again or contact support.');
       }
     };
@@ -43,22 +54,25 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
   
   // Handle successful payment
   const handlePaymentSuccess = async (paymentIntent) => {
-    console.log('Payment intent succeeded:', paymentIntent.id);
-    
     // Avoid duplicate processing
     if (isProcessing && isPaymentVerified) {
-      console.log('Payment already being processed, skipping duplicate call');
+      console.log('DEBUG: Skipping duplicate payment processing');
       return;
     }
     
+    console.log('DEBUG: Starting payment success handling process');
     setIsProcessing(true);
     
     try {
       const token = localStorage.getItem('token');
       
+      console.log('DEBUG: Confirming payment with server', {
+        paymentIntentId: paymentIntent.id,
+        orderId: orderId
+      });
+      
       // First, explicitly confirm the payment with the payment service
-      console.log('Sending payment confirmation to server:', paymentIntent.id);
-      const confirmResponse = await axios.post(
+      await axios.post(
         `${config.PAYMENT_SERVICE_URL}/payments/stripe/confirm`, 
         { 
           paymentIntentId: paymentIntent.id,
@@ -69,10 +83,12 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
           timeout: 10000  // 10 second timeout
         }
       );
-      console.log('Payment confirmation response:', confirmResponse.data);
+      
+      console.log('DEBUG: Payment confirmed with server successfully');
       
       // Clear cart after successful payment confirmation
       await clearCart();
+      console.log('DEBUG: Cart cleared successfully');
       
       // Set a flag to help with recovery if the page gets refreshed
       localStorage.setItem('paymentSuccessful', 'true');
@@ -81,22 +97,26 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
       // Store orderId in localStorage before redirect
       localStorage.setItem('pendingOrderId', orderId);
       
+      console.log('DEBUG: Payment success handling complete, calling onSuccess callback');
+      
       // Call onSuccess handler and cleanup state
       setIsProcessing(false);
       onSuccess(paymentIntent);
     } catch (apiError) {
-      console.error('Error confirming payment with server:', apiError);
+      console.error('DEBUG: Error confirming payment with server:', apiError.message);
       
       // Even if there's an error confirming with our server, the payment might have succeeded with Stripe
       // Use a fallback approach to avoid customer confusion
       if (paymentIntent.status === 'succeeded') {
+        console.log('DEBUG: Payment succeeded with Stripe despite server confirmation error');
         setErrorMessage('Payment succeeded with Stripe, but we had trouble confirming with our server. Your payment should still be processed.');
         
         // Still attempt to clear the cart
         try {
           await clearCart();
+          console.log('DEBUG: Cart cleared in fallback flow');
         } catch (cartError) {
-          console.error('Error clearing cart:', cartError);
+          console.error('DEBUG: Error clearing cart in fallback flow:', cartError.message);
         }
         
         // Store info to help with recovery
@@ -104,12 +124,15 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
         localStorage.setItem('paymentIntentId', paymentIntent.id);
         localStorage.setItem('pendingOrderId', orderId);
         
+        console.log('DEBUG: Calling success handler in fallback flow');
+        
         // Still call success handler since the payment did succeed with Stripe
         setTimeout(() => {
           setIsProcessing(false);
           onSuccess(paymentIntent);
         }, 3000);
       } else {
+        console.log('DEBUG: Payment confirmation failed with server and payment not succeeded with Stripe');
         setErrorMessage('Payment could not be confirmed with our server. Please contact support if your order is not updated.');
         setIsProcessing(false);
         onError(apiError.message);
@@ -121,16 +144,16 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
     event.preventDefault();
 
     if (!stripe || !elements) {
-      console.log('Stripe.js has not yet loaded');
+      console.log('DEBUG: Stripe or elements not available yet');
       return;
     }
 
+    console.log('DEBUG: Starting payment confirmation process');
     setIsProcessing(true);
     setErrorMessage(null);
-    
-    console.log('Processing payment for order:', orderId);
 
     try {
+      console.log('DEBUG: Calling stripe.confirmPayment');
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -139,33 +162,38 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
         redirect: 'if_required',
       });
 
+      console.log('DEBUG: stripe.confirmPayment completed', { 
+        error: error ? 'Error present' : 'No error',
+        paymentIntentStatus: paymentIntent?.status || 'No paymentIntent'
+      });
+
       if (error) {
         // Show error to customer
-        console.error('Stripe payment error:', error);
+        console.error('DEBUG: Payment error:', error.message, error.type);
         setErrorMessage(error.message);
         onError(error.message);
         setIsProcessing(false); // Ensure we set processing to false
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+        console.log('DEBUG: Payment succeeded immediately without additional authentication');
         // Payment successful without additional authentication - notify backend
-        console.log('Payment succeeded without additional authentication');
         setIsPaymentVerified(true);
         await handlePaymentSuccess(paymentIntent);
         // Note: Don't set isProcessing=false here as handlePaymentSuccess will handle transitions
       } else if (paymentIntent && paymentIntent.status === 'requires_action') {
+        console.log('DEBUG: Payment requires additional authentication actions');
         // Payment requires additional authentication
-        console.log('Payment requires additional authentication, redirecting...');
         setErrorMessage('This payment requires additional verification. You will be redirected to complete authentication.');
         // Store orderId in localStorage before the user is redirected
         localStorage.setItem('pendingOrderId', orderId);
         // No need to set isProcessing=false because redirect will happen
       } else {
+        console.log('DEBUG: Other payment status:', paymentIntent?.status || 'unknown');
         // Other payment status
-        console.log('Payment intent status:', paymentIntent?.status);
         setErrorMessage(`Payment status: ${paymentIntent?.status || 'unknown'}`);
         setIsProcessing(false);
       }
     } catch (err) {
-      console.error('Unexpected payment error:', err);
+      console.error('DEBUG: Unexpected payment error:', err.message);
       setErrorMessage('An unexpected error occurred.');
       onError(err.message);
       setIsProcessing(false);
@@ -201,6 +229,16 @@ const CheckoutForm = ({ orderId, clientSecret, onSuccess, onError }) => {
 // Wrapper component that handles loading Stripe and the PaymentIntent
 const StripePaymentForm = ({ orderId, clientSecret, onSuccess, onError }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [stripeError, setStripeError] = useState(null);
+  
+  // Add a useEffect to verify the Stripe key is available
+  useEffect(() => {
+    if (!STRIPE_PK) {
+      console.error('DEBUG: Stripe publishable key is missing in environment variables');
+      setStripeError('Stripe configuration is missing. Please contact support.');
+      setIsLoading(false);
+    }
+  }, []);
   
   useEffect(() => {
     // Validate required props
@@ -211,12 +249,16 @@ const StripePaymentForm = ({ orderId, clientSecret, onSuccess, onError }) => {
     }
     
     if (!clientSecret) {
-      console.error('Missing clientSecret in StripePaymentForm');
+      console.error('Missing clientSecret');
       onError('Missing payment information');
       return;
     }
     
-    console.log('Initializing Stripe payment form for order:', orderId);
+    console.log('DEBUG: StripePaymentForm initialized with valid props', { 
+      hasOrderId: !!orderId,
+      hasClientSecret: !!clientSecret
+    });
+    
     setIsLoading(false);
   }, [orderId, clientSecret, onError]);
 
@@ -226,6 +268,21 @@ const StripePaymentForm = ({ orderId, clientSecret, onSuccess, onError }) => {
       <Typography variant="body1" sx={{ mt: 2 }}>
         Loading payment form...
       </Typography>
+    </Box>;
+  }
+  
+  if (stripeError) {
+    return <Box sx={{ textAlign: 'center', py: 4 }}>
+      <Alert severity="error" sx={{ mb: 2 }}>
+        {stripeError}
+      </Alert>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={() => window.location.reload()}
+      >
+        Try Again
+      </Button>
     </Box>;
   }
 

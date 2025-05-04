@@ -89,8 +89,8 @@ router.post('/', verifyToken, async (req, res) => {
           message: 'Order created successfully',
           orderId: order._id,
           status: order.status,
-          stripeClientSecret: order.payment.stripeClientSecret,
-          stripePaymentIntentId: order.payment.stripePaymentIntentId
+          hasStripePayment: true,
+          stripeClientSecret: order.payment.stripeClientSecret
         });
       } else {
         // For cash payment or completed orders
@@ -156,11 +156,9 @@ router.get('/:id/status', verifyToken, async (req, res) => {
       error: order.error || null,
       payment: {
         status: order.payment?.status,
-        stripePaymentIntentId: order.payment?.stripePaymentIntentId,
-        stripeClientSecret: order.payment?.stripeClientSecret
-      },
-      // Add client secret at the top level too for better compatibility
-      stripeClientSecret: order.payment?.stripeClientSecret
+        hasPaymentIntent: !!order.payment?.stripePaymentIntentId,
+        hasClientSecret: !!order.payment?.stripeClientSecret
+      }
     };
     
     res.json(responseData);

@@ -114,6 +114,9 @@ const Checkout = () => {
         return;
       }
       
+      console.log('DEBUG: Starting order placement process...');
+      console.log('DEBUG: Payment method selected:', paymentType);
+      
       // Show feedback for payment method
       if (paymentType === 'stripe') {
         setSuccess('Preparing Stripe payment...');
@@ -133,9 +136,16 @@ const Checkout = () => {
         totalAmount: getTotal()
       };
       
-      console.log('Submitting order with data:', orderData);
+      // Replace this console.log that shows all order data including payment info
+      console.log('DEBUG: Submitting order with data:', {
+        items: orderData.items.length,
+        shippingAddress: "{ address data }",
+        paymentMethod: orderData.paymentMethod,
+        totalAmount: orderData.totalAmount
+      });
       
       try {
+        console.log('DEBUG: Sending order creation request to API...');
         const response = await axios.post(
           `${config.ORDER_SERVICE_URL || 'http://localhost:3004'}/orders`,
           orderData,
@@ -147,17 +157,27 @@ const Checkout = () => {
           }
         );
         
-        console.log('Order creation response:', response.data);
+        console.log('DEBUG: Order API response received:', response.data);
+        
+        // Replace this console.log that shows Stripe payment response
+        console.log('DEBUG: Order created successfully:', {
+          orderId: response.data.orderId,
+          status: response.data.status,
+          paymentDetails: response.data.stripeClientSecret ? 'Has client secret' : 'No client secret'
+        });
         
         if (response.data && response.data.orderId) {
           // For online payment, redirect to processing page
           if (paymentType === 'stripe') {
+            console.log('DEBUG: Checking Stripe payment details in response...');
             if (response.data.stripeClientSecret) {
+              console.log('DEBUG: Stripe client secret received, redirecting to processing page');
               // Clear success message
               setSuccess('');
               // If we got a client secret directly, navigate to processing order
               navigate(`/processing-order/${response.data.orderId}`);
             } else {
+              console.log('DEBUG: No Stripe client secret in response, showing error');
               // If stripe payment is selected but no client secret, show error
               setError('Unable to process Stripe payment. Please try again or choose a different payment method.');
               setLoading(false);
@@ -168,14 +188,16 @@ const Checkout = () => {
             navigate(`/order/${response.data.orderId}`);
           }
         } else {
+          console.log('DEBUG: Missing orderId in response');
           setError('Failed to create order. Please try again.');
           setLoading(false);
         }
       } catch (error) {
-        console.error('Error creating order:', error);
+        console.error('DEBUG: Error creating order:', error);
         
         // Check if it's a payment-related error
         if (error.response?.data?.message?.includes('payment') && paymentType === 'stripe') {
+          console.log('DEBUG: Payment-related error detected');
           setError('Payment processing failed. Please try again or choose a different payment method.');
           setPaymentActions(
             <Box sx={{ display: 'flex', gap: 2 }}>
@@ -207,16 +229,18 @@ const Checkout = () => {
           );
         } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
           // Handle timeout specifically
+          console.log('DEBUG: Request timeout detected');
           setError('Request timed out. The payment service might be unavailable. Please try again or use cash payment.');
         } else {
           // For other errors
+          console.log('DEBUG: Other error type:', error.response?.data?.message || error.message);
           setError(error.response?.data?.message || 'Error creating order');
         }
         
         setLoading(false);
       }
     } catch (error) {
-      console.error('Unexpected error:', error);
+      console.error('DEBUG: Unexpected error in handlePlaceOrder:', error);
       setError('An unexpected error occurred. Please try again.');
       setLoading(false);
     }

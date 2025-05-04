@@ -24,9 +24,16 @@ const ProcessingOrder = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // Debug log to check if environment variables are available
+  console.log('DEBUG: Environment check:', {
+    hasStripeKey: !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY,
+    paymentServiceURL: config.PAYMENT_SERVICE_URL
+  });
+  
   useEffect(() => {
     const fetchOrderDetails = async () => {
       try {
+        console.log('DEBUG: Fetching order details for ID:', id);
         const response = await axios.get(
           `${config.ORDER_SERVICE_URL}/orders/${id}`,
           {
@@ -36,29 +43,78 @@ const ProcessingOrder = () => {
           }
         );
         
+        console.log('DEBUG: Order details received:', {
+          orderId: response.data._id || response.data.orderId,
+          paymentMethod: response.data.paymentMethod,
+          hasPayment: !!response.data.payment,
+          hasClientSecret: response.data.payment?.hasClientSecret || false
+        });
+        
         setOrderData(response.data);
         
         // Handle different payment methods directly
         if (response.data.paymentMethod === 'cash') {
+          console.log('DEBUG: Cash payment detected, navigating to order success');
           // For cash payment, navigate to success page
           navigate(`/order/${response.data.orderId || id}`, { replace: true });
           return;
         } else if (response.data.paymentMethod === 'stripe') {
-          // For stripe, check if client secret exists
-          if (response.data.payment?.stripeClientSecret) {
-            setLoading(false);
+          console.log('DEBUG: Stripe payment detected, checking for client secret');
+          // Need to fetch the payment details separately to avoid exposing sensitive data in logs
+          if (response.data.payment?.hasClientSecret || response.data._id) {
+            try {
+              console.log('DEBUG: Fetching payment details for order');
+              // Make a special call to get the payment details for this order
+              const paymentResponse = await axios.get(
+                `${config.PAYMENT_SERVICE_URL}/payments/order/${response.data._id || id}/details`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`
+                  }
+                }
+              );
+              
+              console.log('DEBUG: Payment details received:', {
+                hasClientSecret: !!paymentResponse.data.stripeClientSecret,
+                hasPaymentIntentId: !!paymentResponse.data.stripePaymentIntentId
+              });
+              
+              // Update order data with payment info
+              if (paymentResponse.data && paymentResponse.data.stripeClientSecret) {
+                console.log('DEBUG: Client secret found, updating order data');
+                setOrderData(prev => ({
+                  ...prev,
+                  payment: {
+                    ...prev.payment,
+                    stripeClientSecret: paymentResponse.data.stripeClientSecret,
+                    stripePaymentIntentId: paymentResponse.data.stripePaymentIntentId
+                  }
+                }));
+                setLoading(false);
+              } else {
+                console.log('DEBUG: No client secret found in payment details');
+                setError("Payment information not available");
+                setLoading(false);
+              }
+            } catch (paymentError) {
+              console.error('DEBUG: Error fetching payment details:', paymentError);
+              setError("Error loading payment information");
+              setLoading(false);
+            }
           } else {
-            // If no payment info yet, handle error
+            console.log('DEBUG: No client secret info available in order data');
+            // If no client secret info available, show error
             setError("Payment information not available");
             setLoading(false);
           }
         } else {
+          console.log('DEBUG: Unsupported payment method:', response.data.paymentMethod);
           // For other payment methods, show error
           setError("Unsupported payment method");
           setLoading(false);
         }
       } catch (error) {
-        console.error('Error fetching order:', error);
+        console.error('DEBUG: Error fetching order details:', error);
         setError("Error loading order details");
         setLoading(false);
       }
@@ -68,12 +124,15 @@ const ProcessingOrder = () => {
   }, [id, token, navigate]);
   
   const handlePaymentSuccess = async () => {
+    console.log('DEBUG: Payment success callback triggered');
     // Clear cart before navigating to order details
     await clearCart();
+    console.log('DEBUG: Cart cleared, navigating to order details');
     navigate(`/order/${id}`, { replace: true });
   };
   
   const handlePaymentError = (errorMessage) => {
+    console.log('DEBUG: Payment error callback triggered:', errorMessage);
     setError(errorMessage);
   };
   

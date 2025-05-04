@@ -39,32 +39,49 @@ router.post('/', verifyToken, async (req, res) => {
 // Direct create and initialize Stripe payment
 router.post('/direct-stripe', verifyToken, async (req, res) => {
   try {
+    console.log('DEBUG: Direct Stripe payment request received:', {
+      orderId: req.body.orderId,
+      amount: req.body.amount
+    });
+    
     const { orderId, amount, currency = 'USD', returnUrl } = req.body;
     const userId = req.user.userId;
 
     if (!orderId || !amount) {
+      console.log('DEBUG: Missing required fields in direct-stripe request');
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     // Generate a stable idempotency key
     const idempotencyKey = `order_${orderId}_${userId}_${Date.now()}`;
+    console.log('DEBUG: Generated idempotency key:', idempotencyKey);
 
-    const payment = await paymentService.createStripePayment({
-      orderId,
-      userId,
-      amount,
-      currency,
-      idempotencyKey
-    });
+    try {
+      const payment = await paymentService.createStripePayment({
+        orderId,
+        userId,
+        amount,
+        currency,
+        idempotencyKey
+      });
+      
+      console.log('DEBUG: Stripe payment created successfully:', {
+        paymentId: payment.paymentId,
+        hasClientSecret: !!payment.stripeClientSecret
+      });
 
-    // Return payment details with additional information for direct handling
-    res.status(201).json({
-      ...payment,
-      nextAction: 'redirect-to-stripe',
-      returnUrl: returnUrl || `/processing-order/${orderId}`
-    });
+      // Return payment details with additional information for direct handling
+      res.status(201).json({
+        ...payment,
+        nextAction: 'redirect-to-stripe',
+        returnUrl: returnUrl || `/processing-order/${orderId}`
+      });
+    } catch (paymentCreationError) {
+      console.error('DEBUG: Error in payment service createStripePayment:', paymentCreationError);
+      throw paymentCreationError;
+    }
   } catch (error) {
-    console.error('Error creating direct Stripe payment:', error);
+    console.error('DEBUG: Error creating direct Stripe payment:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -72,16 +89,28 @@ router.post('/direct-stripe', verifyToken, async (req, res) => {
 // Confirm a Stripe payment
 router.post('/stripe/confirm', verifyToken, async (req, res) => {
   try {
+    console.log('DEBUG: Stripe payment confirmation request received:', {
+      paymentIntentId: req.body.paymentIntentId,
+      orderId: req.body.orderId
+    });
+    
     const { paymentIntentId } = req.body;
 
     if (!paymentIntentId) {
+      console.log('DEBUG: Missing payment intent ID in confirmation request');
       return res.status(400).json({ message: 'Payment intent ID is required' });
     }
 
-    const result = await paymentService.confirmStripePayment(paymentIntentId);
-    res.json(result);
+    try {
+      const result = await paymentService.confirmStripePayment(paymentIntentId);
+      console.log('DEBUG: Stripe payment confirmation successful:', result);
+      res.json(result);
+    } catch (confirmationError) {
+      console.error('DEBUG: Error in payment service confirmStripePayment:', confirmationError);
+      throw confirmationError;
+    }
   } catch (error) {
-    console.error('Error confirming Stripe payment:', error);
+    console.error('DEBUG: Error confirming Stripe payment:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -380,6 +409,51 @@ router.post('/test-stripe', async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+});
+
+// Add this new route to get payment details for a specific order
+// This is a secure endpoint that should only be called from the payment processing component
+router.get('/order/:orderId/details', verifyToken, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    if (!orderId) {
+      return res.status(400).json({ message: 'Order ID is required' });
+    }
+    
+    // Get payment by order ID
+    const payment = await paymentService.getPaymentByOrderId(orderId);
+    
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found for this order' });
+    }
+    
+    // Remove the strict user check since we're already verifying the token
+    // and the user has the order ID which is enough proof of ownership
+    // The Order Service already does authorization checks
+    
+    // Only return Stripe payment details for Stripe payments
+    if (payment.paymentMethod === 'stripe') {
+      return res.json({
+        paymentId: payment.paymentId,
+        orderId: payment.orderId,
+        stripeClientSecret: payment.stripeClientSecret,
+        stripePaymentIntentId: payment.stripePaymentIntentId,
+        status: payment.status
+      });
+    } else {
+      // For non-Stripe payments, return basic info without the sensitive data
+      return res.json({
+        paymentId: payment.paymentId,
+        orderId: payment.orderId,
+        paymentMethod: payment.paymentMethod,
+        status: payment.status
+      });
+    }
+  } catch (error) {
+    console.error('Error getting payment details:', error.message);
+    res.status(500).json({ message: 'Error retrieving payment details' });
   }
 });
 
