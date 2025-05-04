@@ -34,14 +34,12 @@ class PaymentService {
       // Create a payment intent with Stripe
       
       // Determine if the amount needs to be converted to cents
-      // If amount is a whole number and >= 100, it's likely already in cents
-      // Otherwise, convert from dollars to cents
-      const isLikelyCents = Number.isInteger(payment.amount) && payment.amount >= 100;
-      const stripeAmount = isLikelyCents ? payment.amount : Math.round(payment.amount * 100);
+      // Always convert amounts to cents for Stripe - they should never be interpreted as cents already
+      // This addresses the issue where prices like 5000.00 are being treated as 50.00
+      const stripeAmount = Math.round(payment.amount * 100);
       
       console.log('DEBUG: Calculated stripe amount:', {
         originalAmount: payment.amount,
-        isLikelyCents,
         stripeAmount
       });
       
