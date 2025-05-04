@@ -3,6 +3,7 @@ const eventTypes = require('../../shared/eventTypes');
 const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const jwt = require('jsonwebtoken');
+const redisClient = require('../../shared/redis');
 
 // Configure event logger
 const winston = require('winston');
@@ -16,6 +17,15 @@ const logger = winston.createLogger({
 
 class ProductEventHandler {
   constructor() {
+    // Define cache keys for invalidation
+    this.CACHE_KEYS = {
+      ALL_PRODUCTS: 'products:all',
+      PRODUCT_DETAILS: 'product:',
+      PRODUCT_CATEGORY: 'products:category:',
+      PRODUCT_SEARCH: 'products:search:',
+      SELLER_PRODUCTS: 'products:seller:'
+    };
+    
     this.initializeEventHandlers();
   }
 
@@ -56,11 +66,98 @@ class ProductEventHandler {
         eventTypes.ORDER_COMPLETED,
         this.handleOrderCompleted.bind(this)
       );
+      
+      // Subscribe to events that should trigger cache invalidation
+      this.setupCacheInvalidationHandlers();
 
       logger.info('Product service event handlers initialized');
     } catch (error) {
       logger.error('Error initializing event handlers:', error);
       throw error;
+    }
+  }
+  
+  async setupCacheInvalidationHandlers() {
+    try {
+      // Subscribe to events from other services that should invalidate product caches
+      await rabbitmq.subscribe(
+        'inventory-events',
+        'product-service-inventory-updated',
+        'inventory.updated',
+        this.handleInventoryUpdated.bind(this)
+      );
+      
+      // More event subscriptions can be added here
+      
+      logger.info('Cache invalidation handlers initialized');
+    } catch (error) {
+      logger.error('Error setting up cache invalidation handlers:', error);
+    }
+  }
+  
+  async handleInventoryUpdated(event) {
+    try {
+      const { productId } = event.data;
+      if (productId) {
+        await this.invalidateProductCache(productId);
+        logger.info(`Cache invalidated due to inventory update for product ${productId}`);
+      }
+    } catch (error) {
+      logger.error('Error handling inventory updated event for cache invalidation:', error);
+    }
+  }
+  
+  async invalidateProductCache(productId) {
+    try {
+      // Invalidate specific product cache
+      await redisClient.delete(`${this.CACHE_KEYS.PRODUCT_DETAILS}${productId}`);
+      
+      // Also invalidate the all products list
+      await redisClient.delete(this.CACHE_KEYS.ALL_PRODUCTS);
+      
+      // We don't know which category this product belongs to, so we'd need to 
+      // either fetch the product to find out, or invalidate all category caches
+      // For now, we'll just log that more specific invalidation could be implemented
+      logger.info(`Invalidated cache for product ${productId}`);
+      
+      return true;
+    } catch (error) {
+      logger.error(`Error invalidating cache for product ${productId}:`, error);
+      return false;
+    }
+  }
+  
+  async invalidateSellerProductsCache(sellerId) {
+    try {
+      await redisClient.delete(`${this.CACHE_KEYS.SELLER_PRODUCTS}${sellerId}`);
+      logger.info(`Invalidated cache for seller ${sellerId}`);
+      return true;
+    } catch (error) {
+      logger.error(`Error invalidating cache for seller ${sellerId}:`, error);
+      return false;
+    }
+  }
+  
+  async invalidateCategoryCache(category) {
+    try {
+      await redisClient.delete(`${this.CACHE_KEYS.PRODUCT_CATEGORY}${category}`);
+      logger.info(`Invalidated cache for category ${category}`);
+      return true;
+    } catch (error) {
+      logger.error(`Error invalidating cache for category ${category}:`, error);
+      return false;
+    }
+  }
+  
+  async invalidateSearchCache() {
+    try {
+      // Search caches use pattern matching to delete all search-related keys
+      await redisClient.deletePattern(`${this.CACHE_KEYS.PRODUCT_SEARCH}*`);
+      logger.info('Invalidated all search caches');
+      return true;
+    } catch (error) {
+      logger.error('Error invalidating search caches:', error);
+      return false;
     }
   }
 
@@ -71,15 +168,36 @@ class ProductEventHandler {
       switch (type) {
         case eventTypes.PRODUCT_CREATED:
           logger.info(`Product created event received: ${data.productId}`);
+          // Invalidate relevant caches
+          await this.invalidateProductCache(data.productId);
+          await this.invalidateSellerProductsCache(data.sellerId);
+          await this.invalidateSearchCache();
           break;
         case eventTypes.PRODUCT_UPDATED:
           logger.info(`Product updated event received: ${data.productId}`);
+          // Invalidate relevant caches
+          await this.invalidateProductCache(data.productId);
+          await this.invalidateSellerProductsCache(data.sellerId);
+          await this.invalidateSearchCache();
+          if (data.category) {
+            await this.invalidateCategoryCache(data.category);
+          }
           break;
         case eventTypes.PRODUCT_DELETED:
           logger.info(`Product deleted event received: ${data.productId}`);
+          // When a product is deleted, find out its details first to invalidate related caches
+          const product = await Product.findById(data.productId);
+          if (product) {
+            await this.invalidateProductCache(data.productId);
+            await this.invalidateSellerProductsCache(product.createdBy);
+            await this.invalidateCategoryCache(product.category);
+            await this.invalidateSearchCache();
+          }
           break;
         case eventTypes.PRODUCT_STOCK_UPDATED:
           logger.info(`Product stock updated event received: ${data.productId}`);
+          // Just invalidate the specific product cache
+          await this.invalidateProductCache(data.productId);
           break;
       }
     } catch (error) {
@@ -111,6 +229,12 @@ class ProductEventHandler {
         category: product.category,
         sellerId: product.createdBy
       });
+      
+      // Invalidate caches after product creation
+      await this.invalidateProductCache(product._id);
+      await this.invalidateSellerProductsCache(product.createdBy);
+      await this.invalidateCategoryCache(product.category);
+      await this.invalidateSearchCache();
     } catch (error) {
       logger.error('Error handling product creation:', error);
       throw error;
@@ -128,6 +252,12 @@ class ProductEventHandler {
         category: product.category,
         sellerId: product.createdBy
       });
+      
+      // Invalidate caches after product update
+      await this.invalidateProductCache(product._id);
+      await this.invalidateSellerProductsCache(product.createdBy);
+      await this.invalidateCategoryCache(product.category);
+      await this.invalidateSearchCache();
     } catch (error) {
       logger.error('Error handling product update:', error);
       throw error;
@@ -136,9 +266,24 @@ class ProductEventHandler {
 
   async handleProductDeleted(productId) {
     try {
+      // Get product details before deleting for cache invalidation
+      const product = await Product.findById(productId);
+      
       await this.publishProductEvent(eventTypes.PRODUCT_DELETED, {
         productId
       });
+      
+      // Invalidate caches after product deletion
+      await this.invalidateProductCache(productId);
+      
+      // If we found the product, invalidate related caches
+      if (product) {
+        await this.invalidateSellerProductsCache(product.createdBy);
+        await this.invalidateCategoryCache(product.category);
+      }
+      
+      // Always invalidate these
+      await this.invalidateSearchCache();
     } catch (error) {
       logger.error('Error handling product deletion:', error);
       throw error;
@@ -151,6 +296,9 @@ class ProductEventHandler {
         productId,
         stock: newStock
       });
+      
+      // Invalidate product cache after stock update
+      await this.invalidateProductCache(productId);
     } catch (error) {
       logger.error('Error handling stock update:', error);
       throw error;

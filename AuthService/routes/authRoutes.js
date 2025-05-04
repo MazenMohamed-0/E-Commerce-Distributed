@@ -193,6 +193,22 @@ router.get('/verify-token', verifyToken, (req, res) => {
     }
 });
 
+// Logout endpoint to invalidate cache
+router.post('/logout', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const token = req.headers.authorization.split(' ')[1];
+        
+        const result = await authService.logout(userId, token);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            message: error.message || 'Logout failed'
+        });
+    }
+});
+
 // Protected routes
 router.use(verifyToken);
 

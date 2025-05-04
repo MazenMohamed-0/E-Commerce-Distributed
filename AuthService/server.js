@@ -7,6 +7,7 @@ const passport = require('./services/passport');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/user');
 const path = require('path');
+const redisClient = require('../shared/redis');
 
 const app = express();
 
@@ -34,9 +35,23 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Initialize Redis connection
+async function initRedis() {
+  try {
+    await redisClient.connect();
+    console.log('Redis client connected successfully');
+  } catch (error) {
+    console.error('Failed to connect to Redis:', error);
+  }
+}
+
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    // Once MongoDB is connected, initialize Redis
+    initRedis();
+  })
   .catch((err) => console.error('MongoDB connection error:', err));
 
 // Initialize event handlers

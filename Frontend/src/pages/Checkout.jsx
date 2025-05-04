@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import OrderProcessingStatus from '../components/OrderProcessingStatus';
 import config from '../config';
+import Navbar from '../components/Navbar';
 
 const steps = ['Shipping Information', 'Payment Method', 'Review Order'];
 
@@ -479,91 +480,94 @@ const Checkout = () => {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Typography variant="h4" gutterBottom align="center">
-        Checkout
-      </Typography>
-      
-      <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-        {steps.map((label) => (
-          <Step key={label}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
+    <>
+      <Navbar />
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Typography variant="h4" gutterBottom align="center">
+          Checkout
+        </Typography>
+        
+        <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+          {steps.map((label) => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
 
-      {error && activeStep < steps.length && (
-        <Paper 
-          elevation={0} 
-          sx={{ 
-            mb: 3, 
-            p: 2, 
-            borderRadius: 2, 
-            backgroundColor: '#FFF5F5',
-            border: '1px solid #FFC7C7'
-          }}
-        >
-          <Typography variant="body1" color="error.main">
-            {error}
-          </Typography>
-          {paymentActions && (
-            <Box sx={{ mt: 2 }}>
-              {paymentActions}
-            </Box>
-          )}
-        </Paper>
-      )}
-
-      {getStepContent(activeStep)}
-
-      {/* Only show nav buttons if not in processing step */}
-      {activeStep < steps.length && (
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-          <Button
-            disabled={activeStep === 0 || loading}
-            onClick={handleBack}
+        {error && activeStep < steps.length && (
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              mb: 3, 
+              p: 2, 
+              borderRadius: 2, 
+              backgroundColor: '#FFF5F5',
+              border: '1px solid #FFC7C7'
+            }}
           >
-            Back
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleNext}
-            disabled={loading}
-          >
-            {loading ? (
-              <CircularProgress size={24} />
-            ) : activeStep === steps.length - 1 ? (
-              'Place Order'
-            ) : (
-              'Next'
+            <Typography variant="body1" color="error.main">
+              {error}
+            </Typography>
+            {paymentActions && (
+              <Box sx={{ mt: 2 }}>
+                {paymentActions}
+              </Box>
             )}
-          </Button>
-        </Box>
-      )}
+          </Paper>
+        )}
 
-      <Snackbar
-        open={!!success}
-        autoHideDuration={6000}
-        onClose={() => setSuccess('')}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert 
-          severity="success" 
-          variant="filled"
-          sx={{ 
-            width: '100%', 
-            fontSize: '1.1rem', 
-            backgroundColor: 'success.main',
-            '& .MuiAlert-icon': {
-              fontSize: '1.5rem'
-            }
-          }}
+        {getStepContent(activeStep)}
+
+        {/* Only show nav buttons if not in processing step */}
+        {activeStep < steps.length && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+            <Button
+              disabled={activeStep === 0 || loading}
+              onClick={handleBack}
+            >
+              Back
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleNext}
+              disabled={loading}
+            >
+              {loading ? (
+                <CircularProgress size={24} />
+              ) : activeStep === steps.length - 1 ? (
+                'Place Order'
+              ) : (
+                'Next'
+              )}
+            </Button>
+          </Box>
+        )}
+
+        <Snackbar
+          open={!!success}
+          autoHideDuration={6000}
+          onClose={() => setSuccess('')}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
-          {success}
-        </Alert>
-      </Snackbar>
-    </Container>
+          <Alert 
+            severity="success" 
+            variant="filled"
+            sx={{ 
+              width: '100%', 
+              fontSize: '1.1rem', 
+              backgroundColor: 'success.main',
+              '& .MuiAlert-icon': {
+                fontSize: '1.5rem'
+              }
+            }}
+          >
+            {success}
+          </Alert>
+        </Snackbar>
+      </Container>
+    </>
   );
 };
 
