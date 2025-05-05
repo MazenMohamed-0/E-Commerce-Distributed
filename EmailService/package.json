@@ -1,0 +1,25 @@
+{
+  "name": "e-commerce-email-service",
+  "version": "1.0.0",
+  "description": "Serverless email service for e-commerce platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=sendOrderConfirmation --port=8081",
+    "dev": "cross-env NODE_ENV=development functions-framework --target=sendOrderConfirmation --port=8081",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.1.0",
+    "@google-cloud/secret-manager": "^4.2.0",
+    "nodemailer": "^6.9.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

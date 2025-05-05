@@ -152,10 +152,10 @@ class UserService {
       }
       
       // If not in cache, get from database
-      const user = await userRepository.findById(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
+    const user = await userRepository.findById(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
       
       // Store in cache for future requests
       await redisClient.set(
@@ -165,7 +165,7 @@ class UserService {
       );
       
       logger.info(`Cache miss: User ${id} fetched from database and cached`);
-      return user;
+    return user;
     } catch (error) {
       logger.error(`Error getting user by ID ${id}:`, error);
       throw error;
@@ -175,58 +175,58 @@ class UserService {
   // Create new user with role validation
   async createUser(userData) {
     try {
-      const { name, email, password, role } = userData;
+    const { name, email, password, role } = userData;
 
-      // Validate required fields
-      if (!name || !email || !password) {
-        throw new Error('Name, email, and password are required');
+    // Validate required fields
+    if (!name || !email || !password) {
+      throw new Error('Name, email, and password are required');
+    }
+
+    // Validate role
+    if (role && !['buyer', 'seller', 'admin'].includes(role)) {
+      throw new Error('Invalid role. Must be buyer, seller, or admin');
+    }
+
+    // Check if user already exists
+    const existingUser = await userRepository.findByEmail(email);
+    if (existingUser) {
+      throw new Error('User already exists with this email');
+    }
+
+    // Validate seller-specific fields if role is seller
+    if (role === 'seller') {
+      const requiredSellerFields = ['storeName', 'taxNumber'];
+      const missingFields = requiredSellerFields.filter(field => !userData.storeInfo?.[field]);
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required seller fields: ${missingFields.join(', ')}`);
       }
+    }
 
-      // Validate role
-      if (role && !['buyer', 'seller', 'admin'].includes(role)) {
-        throw new Error('Invalid role. Must be buyer, seller, or admin');
-      }
+    // Create new user
+    const userToCreate = {
+      name,
+      email,
+      password,
+      role: role || 'buyer',
+      ...(role === 'seller' && {
+        storeInfo: userData.storeInfo,
+        sellerStatus: 'pending'
+      }),
+      ...(role === 'buyer' && {
+        shippingAddress: userData.shippingAddress
+      })
+    };
 
-      // Check if user already exists
-      const existingUser = await userRepository.findByEmail(email);
-      if (existingUser) {
-        throw new Error('User already exists with this email');
-      }
-
-      // Validate seller-specific fields if role is seller
-      if (role === 'seller') {
-        const requiredSellerFields = ['storeName', 'taxNumber'];
-        const missingFields = requiredSellerFields.filter(field => !userData.storeInfo?.[field]);
-        if (missingFields.length > 0) {
-          throw new Error(`Missing required seller fields: ${missingFields.join(', ')}`);
-        }
-      }
-
-      // Create new user
-      const userToCreate = {
-        name,
-        email,
-        password,
-        role: role || 'buyer',
-        ...(role === 'seller' && {
-          storeInfo: userData.storeInfo,
-          sellerStatus: 'pending'
-        }),
-        ...(role === 'buyer' && {
-          shippingAddress: userData.shippingAddress
-        })
-      };
-
-      const user = await userRepository.create(userToCreate);
-      
-      // Return user without password
-      const userResponse = user.toObject();
-      delete userResponse.password;
+    const user = await userRepository.create(userToCreate);
+    
+    // Return user without password
+    const userResponse = user.toObject();
+    delete userResponse.password;
       
       // Invalidate relevant caches
       await this.invalidateUserCache(user._id, user.email);
-      
-      return userResponse;
+    
+    return userResponse;
     } catch (error) {
       logger.error('Error creating user:', error);
       throw error;
@@ -236,125 +236,125 @@ class UserService {
   // Update user with role-specific validations
   async updateUser(id, updates, isAdmin) {
     try {
-      const user = await userRepository.findById(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
+    const user = await userRepository.findById(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-      // Special handling for admin routes - allow all updates
-      if (isAdmin) {
-        console.log('Admin update with data:', updates);
+    // Special handling for admin routes - allow all updates
+    if (isAdmin) {
+      console.log('Admin update with data:', updates);
+      
+      // Handle status - this is what was missing
+      if (updates.status) {
+        user.status = updates.status;
+      }
+      console.log(user);
+      
+      // Handle seller-specific fields
+      if (user.role === 'seller') {
+        if (updates.sellerStatus) user.sellerStatus = updates.sellerStatus;
+        if (updates.rejectionReason) user.rejectionReason = updates.rejectionReason;
         
-        // Handle status - this is what was missing
-        if (updates.status) {
-          user.status = updates.status;
+        // Handle store info if provided
+        if (updates.storeInfo) {
+          user.storeInfo = {
+            ...user.storeInfo,
+            ...updates.storeInfo
+          };
         }
-        console.log(user);
-        
-        // Handle seller-specific fields
-        if (user.role === 'seller') {
-          if (updates.sellerStatus) user.sellerStatus = updates.sellerStatus;
-          if (updates.rejectionReason) user.rejectionReason = updates.rejectionReason;
-          
-          // Handle store info if provided
-          if (updates.storeInfo) {
-            user.storeInfo = {
-              ...user.storeInfo,
-              ...updates.storeInfo
-            };
-          }
-        }
-        
-        // Handle buyer-specific fields
-        if (user.role === 'buyer' && updates.shippingAddress) {
-          user.shippingAddress = updates.shippingAddress;
-        }
-        
-        // Create updates object with all the changes
-        const updatedFields = {
-          name: user.name,
-          email: user.email,
-          password: user.password,
-          role: user.role,
-          status: user.status,
-          ...(user.role === 'seller' && {
-            sellerStatus: user.sellerStatus,
-            rejectionReason: user.rejectionReason,
-            storeInfo: user.storeInfo
-          }),
-          ...(user.role === 'buyer' && {
-            shippingAddress: user.shippingAddress
-          })
-        };
-        
-        // Update the user through the repository
-        const updatedUser = await userRepository.update(id, updatedFields);
-        const userResponse = updatedUser.toObject();
-        delete userResponse.password;
+      }
+      
+      // Handle buyer-specific fields
+      if (user.role === 'buyer' && updates.shippingAddress) {
+        user.shippingAddress = updates.shippingAddress;
+      }
+      
+      // Create updates object with all the changes
+      const updatedFields = {
+        name: user.name,
+        email: user.email,
+        password: user.password,
+        role: user.role,
+        status: user.status,
+        ...(user.role === 'seller' && {
+          sellerStatus: user.sellerStatus,
+          rejectionReason: user.rejectionReason,
+          storeInfo: user.storeInfo
+        }),
+        ...(user.role === 'buyer' && {
+          shippingAddress: user.shippingAddress
+        })
+      };
+      
+      // Update the user through the repository
+      const updatedUser = await userRepository.update(id, updatedFields);
+      const userResponse = updatedUser.toObject();
+      delete userResponse.password;
         
         // Invalidate relevant caches
         await this.invalidateUserCache(id, updatedUser.email);
         
-        return userResponse;
+      return userResponse;
+    }
+    
+    // Regular user update (non-admin) with validation
+    // Update allowed fields based on role
+    const allowedUpdates = {
+      common: ['name', 'email', 'password'],
+      buyer: ['shippingAddress'],
+      seller: ['storeInfo'],
+      admin: ['role', 'sellerStatus', 'rejectionReason']
+    };
+
+    const updateKeys = Object.keys(updates);
+    const userRole = user.role;
+
+    // Check if updates are valid for the user's role
+    const isValidOperation = updateKeys.every(update => {
+      return allowedUpdates.common.includes(update) ||
+             (userRole === 'buyer' && allowedUpdates.buyer.includes(update)) ||
+             (userRole === 'seller' && allowedUpdates.seller.includes(update));
+    });
+
+    if (!isValidOperation) {
+      throw new Error('Invalid updates for user role');
+    }
+
+    // Handle role-specific updates
+    if (userRole === 'seller') {
+      if (updates.storeInfo) {
+        // Only allow updating certain store info fields
+        const allowedStoreInfoUpdates = [
+          'storeDescription', 'contactNumber'
+        ];
+        
+        Object.keys(updates.storeInfo).forEach(key => {
+          if (allowedStoreInfoUpdates.includes(key)) {
+            user.storeInfo[key] = updates.storeInfo[key];
+          }
+        });
       }
-      
-      // Regular user update (non-admin) with validation
-      // Update allowed fields based on role
-      const allowedUpdates = {
-        common: ['name', 'email', 'password'],
-        buyer: ['shippingAddress'],
-        seller: ['storeInfo'],
-        admin: ['role', 'sellerStatus', 'rejectionReason']
-      };
+    }
 
-      const updateKeys = Object.keys(updates);
-      const userRole = user.role;
+    if (userRole === 'buyer') {
+      if (updates.shippingAddress) user.shippingAddress = updates.shippingAddress;
+    }
 
-      // Check if updates are valid for the user's role
-      const isValidOperation = updateKeys.every(update => {
-        return allowedUpdates.common.includes(update) ||
-               (userRole === 'buyer' && allowedUpdates.buyer.includes(update)) ||
-               (userRole === 'seller' && allowedUpdates.seller.includes(update));
-      });
+    // Handle common updates
+    if (updates.name) user.name = updates.name;
+    if (updates.email) user.email = updates.email;
+    if (updates.password) user.password = updates.password;
 
-      if (!isValidOperation) {
-        throw new Error('Invalid updates for user role');
-      }
+    await user.save();
 
-      // Handle role-specific updates
-      if (userRole === 'seller') {
-        if (updates.storeInfo) {
-          // Only allow updating certain store info fields
-          const allowedStoreInfoUpdates = [
-            'storeDescription', 'contactNumber'
-          ];
-          
-          Object.keys(updates.storeInfo).forEach(key => {
-            if (allowedStoreInfoUpdates.includes(key)) {
-              user.storeInfo[key] = updates.storeInfo[key];
-            }
-          });
-        }
-      }
-
-      if (userRole === 'buyer') {
-        if (updates.shippingAddress) user.shippingAddress = updates.shippingAddress;
-      }
-
-      // Handle common updates
-      if (updates.name) user.name = updates.name;
-      if (updates.email) user.email = updates.email;
-      if (updates.password) user.password = updates.password;
-
-      await user.save();
-
-      const userResponse = user.toObject();
-      delete userResponse.password;
+    const userResponse = user.toObject();
+    delete userResponse.password;
       
       // Invalidate relevant caches
       await this.invalidateUserCache(id, user.email);
       
-      return userResponse;
+    return userResponse;
     } catch (error) {
       logger.error(`Error updating user ${id}:`, error);
       throw error;
@@ -372,15 +372,15 @@ class UserService {
       
       const email = user.email;
       
-      const result = await userRepository.delete(id);
-      if (result.deletedCount === 0) {
-        throw new Error('User not found');
-      }
+    const result = await userRepository.delete(id);
+    if (result.deletedCount === 0) {
+      throw new Error('User not found');
+    }
       
       // Invalidate relevant caches
       await this.invalidateUserCache(id, email);
       
-      return { message: 'User deleted successfully' };
+    return { message: 'User deleted successfully' };
     } catch (error) {
       logger.error(`Error deleting user ${id}:`, error);
       throw error;
@@ -424,11 +424,11 @@ class UserService {
   // Approve seller
   async approveSeller(sellerId) {
     try {
-      const seller = await userRepository.findById(sellerId);
-      if (!seller || seller.role !== 'seller') {
-        throw new Error('Seller not found');
-      }
-
+    const seller = await userRepository.findById(sellerId);
+    if (!seller || seller.role !== 'seller') {
+      throw new Error('Seller not found');
+    }
+    
       seller.status = 'approved';
       await seller.save();
       
@@ -447,11 +447,11 @@ class UserService {
   // Reject seller
   async rejectSeller(sellerId, reason) {
     try {
-      const seller = await userRepository.findById(sellerId);
-      if (!seller || seller.role !== 'seller') {
-        throw new Error('Seller not found');
-      }
-
+    const seller = await userRepository.findById(sellerId);
+    if (!seller || seller.role !== 'seller') {
+      throw new Error('Seller not found');
+    }
+    
       seller.status = 'rejected';
       if (reason) {
         seller.rejectionReason = reason;
@@ -485,9 +485,9 @@ class UserService {
       
       // If not in cache, get from database
       const seller = await userRepository.findById(sellerId);
-      if (!seller || seller.role !== 'seller') {
-        throw new Error('Seller not found');
-      }
+    if (!seller || seller.role !== 'seller') {
+      throw new Error('Seller not found');
+    }
       
       // Store in cache for future requests
       await redisClient.set(
@@ -518,9 +518,9 @@ class UserService {
       
       // If not in cache, get from database
       const buyer = await userRepository.findById(buyerId);
-      if (!buyer || buyer.role !== 'buyer') {
-        throw new Error('Buyer not found');
-      }
+    if (!buyer || buyer.role !== 'buyer') {
+      throw new Error('Buyer not found');
+    }
       
       // Store in cache for future requests
       await redisClient.set(
@@ -544,10 +544,10 @@ class UserService {
         throw new Error('Invalid status value');
       }
 
-      const user = await userRepository.findById(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
 
       user.status = status;
       await user.save();

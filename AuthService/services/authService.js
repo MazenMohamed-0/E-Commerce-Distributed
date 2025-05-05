@@ -64,7 +64,8 @@ class AuthService {
     return jwt.sign(
       { 
         userId: user._id,
-        role: user.role
+        role: user.role,
+        email: user.email
       },
       this.secret,
       { expiresIn: '24h' }
@@ -167,7 +168,7 @@ class AuthService {
       // Cache token verification data
       await redisClient.set(
         `${this.CACHE_KEYS.TOKEN_VERIFICATION}${token}`,
-        { userId, role: userData.role },
+        { userId, role: userData.role, email: userData.email },
         this.CACHE_TTL.TOKEN_VERIFICATION
       );
       
@@ -363,7 +364,7 @@ class AuthService {
       if (!user) {
         throw new Error('User not found');
       }
-      
+
       // Convert to proper format expected by the client
       // Important: Use id instead of _id
       const userProfile = {
@@ -374,7 +375,7 @@ class AuthService {
         createdAt: user.createdAt,
         status: user.status || 'approved'
       };
-      
+
       // Add role-specific fields
       if (user.role === 'seller') {
         userProfile.storeInfo = {

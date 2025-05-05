@@ -315,7 +315,8 @@ router.post('/update-role', async (req, res) => {
         const newToken = jwt.sign(
             { 
                 userId: newUser._id,
-                role: newUser.role
+                role: newUser.role,
+                email: newUser.email
             },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }

@@ -77,6 +77,7 @@ services:
       - MONGODB_URL=mongodb://mongodb-order:27017/order
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
+      - EMAIL_SERVICE_URL=https://us-central1-precise-valor-457221-a5.cloudfunctions.net/sendOrderConfirmation
     depends_on:
       - mongodb-order
       - rabbitmq

@@ -8,10 +8,23 @@ const verifyToken = (req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        
+        // Log decoded token for debugging (without sensitive information)
+        console.log(`[AUTH MIDDLEWARE] Token decoded for user: ${decoded.userId}, role: ${decoded.role}`);
+        
+        // Check for email in the token
+        if (!decoded.email) {
+            console.warn(`[AUTH MIDDLEWARE] No email in token for user: ${decoded.userId}`);
+            // We don't fail the request, but log the warning
+        } else {
+            console.log(`[AUTH MIDDLEWARE] Found email in token: ${decoded.email}`);
+        }
+        
         req.user = decoded;
         next();
     } catch (error) {
+        console.error(`[AUTH MIDDLEWARE] Token verification failed: ${error.message}`);
         return res.status(401).json({ message: 'Invalid token' });
     }
 };

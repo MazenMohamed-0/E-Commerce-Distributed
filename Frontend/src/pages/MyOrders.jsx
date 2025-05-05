@@ -253,6 +253,7 @@ const MyOrders = () => {
                     <TableCell>Total Amount</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Payment Method</TableCell>
+                    <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -268,6 +269,23 @@ const MyOrders = () => {
                       </TableCell>
                       <TableCell>
                         {getPaymentInfo(order)}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          onClick={() => navigate(`/order/${order._id}`)}
+                          sx={{ 
+                            minWidth: '120px',
+                            boxShadow: 1,
+                            '&:hover': {
+                              boxShadow: 2,
+                            }
+                          }}
+                        >
+                          View Details
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

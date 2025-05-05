@@ -423,7 +423,8 @@ class ProductEventHandler {
                 productDetails: {
                   name: product.name,
                   price: product.price,
-                  sellerId: product.createdBy
+                  sellerId: product.createdBy,
+                  imageUrl: product.imageUrl
                 }
               };
             } catch (error) {

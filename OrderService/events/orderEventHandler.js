@@ -167,9 +167,9 @@ class OrderEventHandler {
       // For cash payments, we can consider them completed right away
       if (data.paymentMethod === 'cash') {
         order.payment.status = 'completed';
-        if (order.status === 'processing') {
-          order.status = 'completed';
-        }
+        // Always mark cash payment orders as completed
+        order.status = 'completed';
+        logger.info(`Cash on delivery order marked as completed: ${data.orderId}`);
       }
       
       await order.save();

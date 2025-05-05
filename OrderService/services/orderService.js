@@ -4,6 +4,8 @@ const orderEventHandler = require('../events/orderEventHandler');
 const winston = require('winston');
 const rabbitmq = require('../../shared/rabbitmq');
 const axios = require('axios');
+const emailService = require('./emailService');
+require('dotenv').config();
 
 const logger = winston.createLogger({
     level: 'info',
@@ -134,12 +136,15 @@ class OrderService {
         }
     }
 
-    async createOrder(userId, cartData) {
+    async createOrder(userId, cartData, userEmail) {
         try {
             // Validate products first
             if (!cartData.items || !Array.isArray(cartData.items)) {
                 throw new Error('Invalid order data: items array is required');
             }
+            
+            // Log the userEmail we received from the token middleware
+            console.log(`[ORDER SERVICE] Creating order for user ${userId} with email ${userEmail}`);
             
             // Format items for validation
             const itemsForValidation = cartData.items.map(item => ({
@@ -166,16 +171,18 @@ class OrderService {
                     sellerId: validationItem.productDetails?.sellerId || item.sellerId,
                     quantity: item.quantity,
                     price: validationItem.productDetails?.price || item.price,
-                    productName: item.productName
+                    productName: item.productName,
+                    imageUrl: item.imageUrl
                 };
             });
 
             // Calculate total amount
             const totalAmount = updatedItems.reduce((total, item) => total + (item.price * item.quantity), 0);
 
-            // Create order
+            // Create order with userEmail field
             const order = new Order({
                 userId,
+                userEmail, // Store the email from JWT token
                 items: updatedItems,
                 totalAmount,
                 status: 'processing',
@@ -184,6 +191,10 @@ class OrderService {
             });
 
             await order.save();
+            
+            // Send confirmation email - add debug log here
+            console.log(`[ORDER SERVICE] About to send order confirmation email for order ${order._id}`);
+            await this.sendOrderConfirmationEmail(order);
             
             // Handle payment method-specific logic
             if (order.paymentMethod === 'stripe') {
@@ -198,30 +209,29 @@ class OrderService {
                     
                     // Mark the order as failed
                     order.status = 'failed';
-                    order.error = {
-                        message: `Payment creation failed: ${paymentError.message}`,
-                        step: 'payment_creation',
-                        timestamp: new Date()
-                    };
+                    order.error = paymentError.message;
                     await order.save();
                     
-                    // Re-throw the error to be handled by the caller
-                    throw new Error(`Failed to create payment: ${paymentError.message}`);
+                    throw paymentError;
                 }
             } else if (order.paymentMethod === 'cash') {
-                // For cash payment, mark as completed immediately
+                // For cash payment, mark as completed immediately since it's cash on delivery
+                
+                // Cash on delivery orders should be marked as completed when settled
                 order.status = 'completed';
+                order.paymentStatus = 'completed';
                 await order.save();
                 
-                // Notify product service about the completed order
+                // Notify about completed order for inventory update
                 await orderEventHandler.publishOrderEvent('ORDER_COMPLETED', {
                     orderId: order._id,
-                    userId,
-                    items: updatedItems
+                    userId: order.userId,
+                    items: order.items
                 });
+                
+                logger.info(`Cash on delivery order marked as completed: ${order._id}`);
             }
-
-            logger.info(`Order created: ${order._id}`);
+            
             return order;
         } catch (error) {
             logger.error('Error creating order:', error);
@@ -643,6 +653,153 @@ class OrderService {
         } catch (error) {
             logger.error('Error in getOrdersForSeller:', error);
             throw error;
+        }
+    }
+
+    async sendOrderConfirmationEmail(order, userEmail = null) {
+        try {
+            if (!order) {
+                logger.error('Cannot send email confirmation for null order');
+                console.error(`[ORDER SERVICE] Cannot send email confirmation for null order`);
+                return;
+            }
+            
+            // If userEmail is provided directly, use it
+            // Otherwise, we'll use JWT token data which is now passed directly
+            const email = userEmail || order.userEmail;
+            
+            if (!email) {
+                logger.error(`Could not determine valid email for order ${order._id}`);
+                console.error(`[ORDER SERVICE] Could not determine valid email for order ${order._id}, no email will be sent`);
+                return;
+            }
+            
+            // Add console log for debugging
+            console.log(`[ORDER SERVICE] ✅ Sending confirmation email for order ${order._id} to ${email}`);
+            
+            // Prepare the order data for email sending - stringify and parse to ensure it's a plain object
+            const orderData = JSON.parse(JSON.stringify(order));
+            
+            // Create the request payload
+            const emailPayload = {
+                order: orderData,
+                userEmail: email
+            };
+            
+            // Log the full payload for debugging
+            console.log(`[ORDER SERVICE] Email payload:`, JSON.stringify(emailPayload));
+            
+            // Use our email service directly without environment variables
+            logger.info(`Sending order confirmation email for order ${order._id} to ${email}`);
+            
+            try {
+                // Check for empty email or invalid format
+                if (!email || !email.includes('@')) {
+                    console.error(`[ORDER SERVICE] Invalid email format: ${email}`);
+                    logger.error(`Invalid email format: ${email}`);
+                    return;
+                }
+                
+                // Add debug log to see if we're using the correct Cloud Function URL
+                const cloudFunctionUrl = 'https://us-central1-precise-valor-457221-a5.cloudfunctions.net/sendOrderConfirmation';
+                console.log(`[ORDER SERVICE] Using email cloud function at: ${cloudFunctionUrl}`);
+                
+                // Call the Cloud Function directly with axios
+                const response = await axios.post(cloudFunctionUrl, emailPayload, {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 10000 // 10 second timeout
+                });
+                
+                if (response.data && response.data.success) {
+                    console.log(`[ORDER SERVICE] ✅ Email sent successfully for order ${order._id} to ${email}`);
+                    logger.info(`Order confirmation email sent successfully for order ${order._id}`, {
+                        messageId: response.data.messageId,
+                        recipientEmail: email
+                    });
+                    return { success: true, messageId: response.data.messageId };
+                } else {
+                    console.log(`[ORDER SERVICE] ❌ Email sending failed for order ${order._id}: ${response.data?.error || 'Unknown error'}`);
+                    logger.error(`Failed to send email for order ${order._id}: ${response.data?.error || 'Unknown error'}`);
+                    return { success: false, error: response.data?.error || 'Unknown error' };
+                }
+            } catch (emailError) {
+                console.error(`[ORDER SERVICE] Email service error for order ${order._id}:`, emailError.message);
+                logger.error(`Email service error for order ${order._id}:`, {
+                    message: emailError.message
+                });
+                return { success: false, error: emailError.message };
+            }
+        } catch (error) {
+            // Don't fail the order if email fails
+            console.error(`[ORDER SERVICE] Failed to send order confirmation email:`, error.message);
+            logger.error(`Failed to send order confirmation email for order ${order?._id}:`, error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async getUserEmail(userId) {
+        try {
+            if (!userId) {
+                console.error(`[ORDER SERVICE] Cannot get email for null/undefined userId`);
+                return null;
+            }
+            
+            // Try to get user email from the Auth service
+            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
+            console.log(`[ORDER SERVICE] Getting user email for userId: ${userId} from ${authServiceUrl}`);
+            
+            try {
+                const response = await axios.get(`${authServiceUrl}/users/profile/${userId}`, {
+                    timeout: 5000 // 5 second timeout
+                });
+                
+                if (response.data && response.data.email) {
+                    console.log(`[ORDER SERVICE] Successfully retrieved email: ${response.data.email}`);
+                    return response.data.email;
+                } else {
+                    console.log(`[ORDER SERVICE] Auth service response missing email:`, JSON.stringify(response.data));
+                    
+                    // No valid email in the response
+                    if (process.env.NODE_ENV === 'development') {
+                        // Only use fallback in development
+                        const fallbackEmail = process.env.FALLBACK_TEST_EMAIL || 'test@example.com';
+                        console.log(`[ORDER SERVICE] Using development fallback email: ${fallbackEmail}`);
+                        return fallbackEmail;
+                    } else {
+                        console.error(`[ORDER SERVICE] Could not get email for user ${userId} in production mode`);
+                        return null; // Return null in production to avoid sending to wrong email
+                    }
+                }
+            } catch (error) {
+                console.error(`[ORDER SERVICE] Failed to get user email for userId ${userId}:`, error.message);
+                if (error.response) {
+                    console.error(`[ORDER SERVICE] Response status: ${error.response.status}`);
+                }
+                
+                // Only use fallback in development mode
+                if (process.env.NODE_ENV === 'development') {
+                    const fallbackEmail = process.env.FALLBACK_TEST_EMAIL || 'test@example.com';
+                    console.log(`[ORDER SERVICE] Using development fallback email after error: ${fallbackEmail}`);
+                    return fallbackEmail;
+                } else {
+                    console.error(`[ORDER SERVICE] Auth service unavailable in production mode`);
+                    return null; // Return null in production to avoid sending to wrong email
+                }
+            }
+        } catch (error) {
+            console.error(`[ORDER SERVICE] Error in getUserEmail:`, error.message);
+            
+            // Only use fallback in development mode for unexpected errors
+            if (process.env.NODE_ENV === 'development') {
+                const fallbackEmail = process.env.FALLBACK_TEST_EMAIL || 'test@example.com';
+                console.log(`[ORDER SERVICE] Using development fallback email after unexpected error: ${fallbackEmail}`);
+                return fallbackEmail;
+            } else {
+                console.error(`[ORDER SERVICE] Unexpected error in production mode`);
+                return null; // Return null in production to avoid sending to wrong email
+            }
         }
     }
 }

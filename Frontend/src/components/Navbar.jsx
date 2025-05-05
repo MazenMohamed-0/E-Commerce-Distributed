@@ -91,8 +91,8 @@ const Navbar = ({ hideCartIcon }) => {
           )}
 
           {/* User Profile Icon */}
-          <IconButton 
-            color="inherit"
+            <IconButton 
+              color="inherit"
             sx={{ 
               backgroundColor: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '50%',
@@ -103,7 +103,7 @@ const Navbar = ({ hideCartIcon }) => {
             }}
             onClick={user ? handleProfileClick : () => navigate('/login')}
           >
-            {user ? (
+          {user ? (
               <Avatar
                 src={user?.picture || user?.avatar}
                 sx={{ width: 28, height: 28 }}
@@ -114,11 +114,11 @@ const Navbar = ({ hideCartIcon }) => {
             )}
           </IconButton>
 
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
-          >
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleClose}
+              >
             <MenuItem onClick={() => { navigate('/profile'); handleClose(); }}>Profile</MenuItem>
             {user && user.role === 'buyer' && (
               <MenuItem onClick={() => { navigate('/my-orders'); handleClose(); }}>My Orders</MenuItem>
@@ -126,8 +126,8 @@ const Navbar = ({ hideCartIcon }) => {
             {user && user.role === 'seller' && (
               <MenuItem onClick={() => { navigate('/seller-dashboard'); handleClose(); }}>Seller Dashboard</MenuItem>
             )}
-            <MenuItem onClick={handleLogout}>Logout</MenuItem>
-          </Menu>
+                <MenuItem onClick={handleLogout}>Logout</MenuItem>
+              </Menu>
         </Box>
       </Toolbar>
     </AppBar>

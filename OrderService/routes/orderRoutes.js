@@ -63,6 +63,9 @@ router.post('/', verifyToken, async (req, res) => {
   try {
     const { items, shippingAddress, paymentMethod, totalAmount } = req.body;
     const userId = req.user.userId;
+    const userEmail = req.user.email; // Extract email from JWT token
+    
+    console.log(`[ORDER ROUTES] Creating order for user: ${userId}, email: ${userEmail}`);
     
     // Basic validation
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -73,6 +76,11 @@ router.post('/', verifyToken, async (req, res) => {
       return res.status(400).json({ message: 'Order validation failed: shippingAddress is required' });
     }
     
+    // Validate user email
+    if (!userEmail) {
+      console.warn(`[ORDER ROUTES] No email found in JWT token for user ${userId}`);
+    }
+    
     // Create order and check availability/stock in one step
     try {
       // Process order
@@ -81,7 +89,7 @@ router.post('/', verifyToken, async (req, res) => {
         shippingAddress,
         paymentMethod: paymentMethod || 'cash',
         totalAmount
-      });
+      }, userEmail); // Pass the userEmail from JWT
       
       // Return response based on payment method
       if (order.paymentMethod === 'stripe' && order.payment?.stripeClientSecret) {
@@ -337,6 +345,81 @@ router.post('/:id/refund', isAdmin, async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
+});
+
+// Test endpoint for email sending
+router.post('/test-email', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const userEmail = req.user.email; // Extract email from JWT token
+    
+    // Log the full token object for debugging
+    console.log(`[TEST EMAIL] JWT token contains: ${JSON.stringify(req.user)}`);
+    
+    if (!userEmail) {
+      return res.status(400).json({ 
+        message: 'No email found in JWT token. Make sure your token includes the email claim.',
+        tokenContents: req.user
+      });
+    }
+    
+    console.log(`[TEST EMAIL] Sending test email to: ${userEmail}`);
+    
+    // Create a test order
+    const testOrder = {
+      _id: `test-${Date.now()}`,
+      userId: userId,
+      userEmail: userEmail,
+      totalAmount: 199.99,
+      status: 'processing',
+      paymentMethod: 'Credit Card',
+      createdAt: new Date(),
+      shippingAddress: {
+        fullName: "Test User",
+        addressLine1: "123 Test Street",
+        city: "Test City",
+        state: "TS",
+        postalCode: "12345",
+        country: "Test Country",
+        phoneNumber: "555-123-4567"
+      },
+      items: [
+        {
+          productId: "test-product-1",
+          productName: "Test Product 1",
+          quantity: 1,
+          price: 99.99
+        },
+        {
+          productId: "test-product-2",
+          productName: "Test Product 2",
+          quantity: 2,
+          price: 49.99
+        }
+      ]
+    };
+    
+    // Send the email
+    const result = await orderService.sendOrderConfirmationEmail(testOrder);
+    
+    if (result.success) {
+      res.status(200).json({ 
+        message: 'Test email sent successfully', 
+        messageId: result.messageId, 
+        recipient: userEmail,
+        tokenDecoded: req.user
+      });
+    } else {
+      res.status(500).json({ 
+        message: 'Failed to send test email', 
+        error: result.error, 
+        tokenDecoded: req.user
+      });
+    }
+  } catch (error) {
+    console.error('[TEST EMAIL] Error:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
 });
 
 module.exports = router;

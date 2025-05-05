@@ -256,7 +256,7 @@ class ProductService {
   }
 
   async getProductsByCategory(category) {
-    try {
+        try {
       // Try to get from cache first
       const cacheKey = `${this.CACHE_KEYS.PRODUCT_CATEGORY}${category}`;
       const cachedProducts = await redisClient.get(cacheKey);
@@ -281,14 +281,14 @@ class ProductService {
       
       logger.info(`Cache miss: Products for category ${category} fetched from database and cached`);
       return plainProducts;
-    } catch (error) {
+        } catch (error) {
       logger.error('Error getting category products:', error);
       throw error;
+        }
     }
-  }
 
   async searchProducts(query) {
-    try {
+        try {
       // For search queries, create a normalized key to improve cache hits
       const normalizedQuery = query.toLowerCase().trim();
       const cacheKey = `${this.CACHE_KEYS.PRODUCT_SEARCH}${normalizedQuery}`;
@@ -321,11 +321,11 @@ class ProductService {
       
       logger.info(`Cache miss: Search results for "${query}" fetched from database and cached`);
       return plainResults;
-    } catch (error) {
+        } catch (error) {
       logger.error('Error searching products:', error);
       throw error;
+        }
     }
-  }
 
   async getProductsBySeller(sellerId) {
     try {
