@@ -3,17 +3,44 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   Container,
   Paper,
+  Card,
+  Grid,
   TextField,
   Button,
   Typography,
   Box,
   Divider,
   Alert,
+  Icon,
 } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
 import config from '../config';
+import { motion } from 'framer-motion';
 import GoogleIcon from '@mui/icons-material/Google';
 import FacebookIcon from '@mui/icons-material/Facebook';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import StorefrontIcon from '@mui/icons-material/Storefront';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+
+
+
+const eCommerceAdvantages = [
+  {
+    icon: <ShoppingCartIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Convenience',
+    description: 'Shop anytime, anywhere with just a few clicks.',
+  },
+  {
+    icon: <StorefrontIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Wide Selection',
+    description: 'Access a vast range of products from multiple sellers.',
+  },
+  {
+    icon: <AttachMoneyIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Competitive Pricing',
+    description: 'Compare prices and get the best deals online.',
+  },
+];
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -203,112 +230,153 @@ export const Login = () => {
     return () => window.removeEventListener('message', handleMessage);
   };
 
+// Animation for the page
+  const fadeInUp = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6 } },
+  };
+
+  const staggerContainer = {
+    hidden: { opacity: 1 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.2 } },
+  };
+
   return (
-    <Container maxWidth="md" sx={{ py: 8 }}>
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          Sign In
-        </Typography>
-        
-        {notification && (
-          <Alert 
-            severity="success" 
-            sx={{ 
-              width: '100%', 
-              mt: 2,
-              mb: 2,
-              '& .MuiAlert-message': {
-                width: '100%',
-                textAlign: 'left'
-              }
-            }}
-            onClose={() => setNotification('')}
-          >
-            {notification}
-          </Alert>
-        )}
+    <Container maxWidth="lg" sx={{ py: 8 }}>
+      <Grid container spacing={4} alignItems="center" justifyContent="center">
+        {/* Left Side Content */}
+        <Grid item xs={12} 
+        md={6} 
+        component={motion.div} // Add animation to the left side
+        initial="hidden"
+        animate="visible"
+        variants={staggerContainer}
+        sx={{ display: { xs: 'none', md: 'block' } }}
+        >
+          <Typography 
+          variant="h3" 
+          fontWeight="bold" 
+          gutterBottom
+          component={motion.div}
+          variants={fadeInUp}
+            >
+            Why Choose SAWA'LY?
+          </Typography>
+          {eCommerceAdvantages.map((advantage, index) => (
+            <Box 
+            key={index} 
+            sx={{ mb: 4 }}
+            component={motion.div}
+            variants={fadeInUp}
+            >
+              {advantage.icon}
+              <Box>
+                <Typography variant="h6" fontWeight="bold" gutterBottom>
+                  {advantage.title}
+                </Typography>
+                <Typography variant="body1" color="textSecondary">
+                  {advantage.description}
+                </Typography>
+              </Box>
+            </Box>
+          ))}
+        </Grid>
 
-        {errorMessage && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              width: '100%', 
-              mt: 2,
-              mb: 2,
-              '& .MuiAlert-message': {
-                width: '100%',
-                textAlign: 'left'
-              }
-            }}
+        {/* Right Side Login Form */}
+        <Grid 
+          item 
+          xs={12} 
+          md={6}
+          component={motion.div} 
+          initial="hidden"
+          animate="visible"
+          variants={fadeInUp}
           >
-            {errorMessage}
-          </Alert>
-        )}
-
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1, width: '100%' }}>
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="email"
-            placeholder="your@email.com"
-            label="Email Address"
-            name="email"
-            autoComplete="email"
-            autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label="Password"
-            placeholder="Your Password"
-            type="password"
-            id="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button
-            fullWidth
-            variant="contained"
-            color="primary"
-            type="submit"
-            sx={{ mt: 3, mb: 2 }}
-            disabled={loading}
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </Button>
-          <Divider sx={{ my: 2 }}>or</Divider>
-          <Button
-            fullWidth
-            variant="outlined"
-            onClick={handleGoogleLogin}
-            sx={{ mb: 2 }}
-            startIcon={<GoogleIcon />}
-          >
-            Sign in with Google
-          </Button>
-          <Button
-            fullWidth
-            variant="outlined"
-            onClick={handleFacebookLogin}
-            startIcon={<FacebookIcon />}
-          >
-            Sign in with Facebook
-          </Button>
-        </Box>
-      </Box>
+          <Card sx={{ p: 4, boxShadow: 3, borderRadius: 4 }}>
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
+              Sign In
+            </Typography>
+            {notification && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {notification}
+              </Alert>
+            )}
+            {errorMessage && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {errorMessage}
+              </Alert>
+            )}
+            <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                required
+                id="email"
+                label="Email Address"
+                type="email"
+                name="email"
+                autoComplete="email"
+                autoFocus
+                placeholder="your@email.com"
+                variant="outlined"
+                margin="normal"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <TextField
+                fullWidth
+                label="Password"
+                type="password"
+                placeholder="Your Password"
+                variant="outlined"
+                margin="normal"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Button
+                fullWidth
+                variant="contained"
+                color="primary"
+                type="submit"
+                sx={{ mt: 3, mb: 2 }}
+                disabled={loading}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+              <Divider sx={{ my: 2 }}>or</Divider>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<GoogleIcon />}
+                onClick={handleGoogleLogin}
+                sx={{ mb: 2 }}
+              >
+                Sign in with Google
+              </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<FacebookIcon />}
+                onClick={handleFacebookLogin}
+              >
+                Sign in with Facebook
+              </Button>
+              <Box sx={{ textAlign: 'center', mt: 2 }}>
+                <Typography variant="body2">
+                  Don't have an account?{' '}
+                  <Button
+                    variant="text"
+                    color="primary"
+                    onClick={() => navigate('/register')}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Sign up
+                  </Button>
+                </Typography>
+              </Box>
+            </Box>
+          </Card>
+        </Grid>
+      </Grid>
     </Container>
   );
 };

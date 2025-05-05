@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   Container,
   Paper,
+  Grid,
+  Card,
   TextField,
   Button,
   Typography,
@@ -13,6 +15,9 @@ import {
 } from '@mui/material';
 import { useAuth } from '../context/hooks';
 import config from '../config';
+import { motion } from 'framer-motion';
+
+
 
 const Register = () => {
   // Form refs
@@ -230,133 +235,196 @@ const Register = () => {
     return () => window.removeEventListener('message', handleMessage);
   };
 
+  const fadeInUp = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6 } },
+  };
+
+  const staggerContainer = {
+    hidden: { opacity: 1 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.2 } },
+  };
+
+
   return (
-    <Container maxWidth="sm">
-      <Paper elevation={3} sx={{ p: 4, mt: 8 }}>
-        <Typography variant="h4" align="center" gutterBottom>
-          Sign Up
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <form onSubmit={handleSubmit}>
-          <TextField
-            fullWidth
-            label="Name"
-            inputRef={nameRef}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Email"
-            type="email"
-            inputRef={emailRef}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Password"
-            type="password"
-            inputRef={passwordRef}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Confirm Password"
-            type="password"
-            inputRef={confirmPasswordRef}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            select
-            label="Role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            margin="normal"
+    <Container maxWidth="lg" sx={{ py: 8 }}>
+      <Grid container spacing={4} alignItems="center" justifyContent="center">
+        {/* Left Side Content */}
+        <Grid
+          item
+          xs={12}
+          md={6}
+          component={motion.div} 
+          initial="hidden"
+          animate="visible"
+          variants={staggerContainer}
+          sx={{ display: { xs: 'none', md: 'block' } }}
+        >
+          <Typography
+            variant="h3"
+            fontWeight="bold"
+            gutterBottom
+            component={motion.div}
+            variants={fadeInUp}
           >
-            <MenuItem value="buyer">Buyer</MenuItem>
-            <MenuItem value="seller">Seller</MenuItem>
-          </TextField>
-
-          {/* Seller-specific fields */}
-          {role === 'seller' && (
-            <>
-              <TextField
-                fullWidth
-                label="Store Name"
-                inputRef={storeNameRef}
-                margin="normal"
-                required
-              />
-              <TextField
-                fullWidth
-                label="Tax Number"
-                inputRef={taxNumberRef}
-                margin="normal"
-                required
-              />
-              <TextField
-                fullWidth
-                label="Store Description"
-                inputRef={storeDescriptionRef}
-                margin="normal"
-                multiline
-                rows={4}
-              />
-              <TextField
-                fullWidth
-                label="Contact Number"
-                inputRef={contactNumberRef}
-                margin="normal"
-              />
-            </>
-          )}
-
-          <Button
-            fullWidth
-            variant="contained"
-            color="primary"
-            type="submit"
-            disabled={loading}
-            sx={{ mt: 2 }}
-          >
-            {loading ? 'Signing up...' : 'Sign Up'}
-          </Button>
-        </form>
-        <Box sx={{ mt: 3, textAlign: 'center' }}>
-          <Typography variant="body2">
-            Already have an account? <Link to="/login">Login</Link>
+            Join SAWA'LY Today!
           </Typography>
-        </Box>
-        <Divider sx={{ my: 3 }}>OR</Divider>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Button
-            fullWidth
-            variant="outlined"
-            color="primary"
-            onClick={handleGoogleRegister}
-            disabled={loading}
+          <Typography
+            variant="body1"
+            color="textSecondary"
+            component={motion.div}
+            variants={fadeInUp}
           >
-            Sign up with Google
-          </Button>
-          <Button
-            fullWidth
-            variant="outlined"
-            color="primary"
-            onClick={handleFacebookRegister}
-            disabled={loading}
-          >
-            Sign up with Facebook
-          </Button>
-        </Box>
-      </Paper>
+            Create an account to start exploring our marketplace and enjoy the
+            benefits of e-commerce.
+          </Typography>
+        </Grid>
+
+        {/* Right Side Registration Form */}
+        <Grid
+          item
+          xs={12}
+          md={6}
+          component={motion.div} 
+          initial="hidden"
+          animate="visible"
+          variants={fadeInUp}
+        >
+          <Card sx={{ p: 4, boxShadow: 3, borderRadius: 4 }}>
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
+              Sign Up
+            </Typography>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Name"
+                inputRef={nameRef}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                inputRef={emailRef}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                label="Password"
+                type="password"
+                inputRef={passwordRef}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                label="Confirm Password"
+                type="password"
+                inputRef={confirmPasswordRef}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                select
+                label="Role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                margin="normal"
+              >
+                <MenuItem value="buyer">Buyer</MenuItem>
+                <MenuItem value="seller">Seller</MenuItem>
+              </TextField>
+
+              {/* Seller-specific fields */}
+              {role === 'seller' && (
+                <>
+                  <TextField
+                    fullWidth
+                    label="Store Name"
+                    inputRef={storeNameRef}
+                    margin="normal"
+                    required
+                  />
+                  <TextField
+                    fullWidth
+                    label="Tax Number"
+                    inputRef={taxNumberRef}
+                    margin="normal"
+                    required
+                  />
+                  <TextField
+                    fullWidth
+                    label="Store Description"
+                    inputRef={storeDescriptionRef}
+                    margin="normal"
+                    multiline
+                    rows={4}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Contact Number"
+                    inputRef={contactNumberRef}
+                    margin="normal"
+                  />
+                </>
+              )}
+
+              <Button
+                fullWidth
+                variant="contained"
+                color="primary"
+                type="submit"
+                disabled={loading}
+                sx={{ mt: 3, mb: 2 }}
+              >
+                {loading ? 'Signing up...' : 'Sign Up'}
+              </Button>
+            </Box>
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Typography variant="body2">
+                Already have an account?{' '}
+                <Button
+                  variant="text"
+                  color="primary"
+                  onClick={() => navigate('/Login')}
+                  sx={{ textTransform: 'none' }}
+                     >
+                  Login
+                </Button>
+              </Typography>
+            </Box>
+            <Divider sx={{ my: 3 }}>OR</Divider>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="primary"
+                onClick={handleGoogleRegister}
+                disabled={loading}
+              >
+                Sign up with Google
+              </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="primary"
+                onClick={handleFacebookRegister}
+                disabled={loading}
+              >
+                Sign up with Facebook
+              </Button>
+            </Box>
+          </Card>
+        </Grid>
+      </Grid>
     </Container>
   );
 };

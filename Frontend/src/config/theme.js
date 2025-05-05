@@ -4,10 +4,10 @@ export const lightTheme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976D2', // Primary color
+      main: '#123458', // Primary color
     },
     secondary: {
-      main: '#424242', // Secondary color
+      main: '#D4C9BE', // Secondary color
     },
     accent: {
       main: '#82B1FF', // Accent color
@@ -25,7 +25,7 @@ export const lightTheme = createTheme({
       main: '#FFC107', // Warning color
     },
     background: {
-      default: '#FFFFFF', // Background color
+      default: '#F1EFEC', // Background color
     },
   },
   typography: {
@@ -37,10 +37,10 @@ export const darkTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#1976D2', // Primary color
+      main: '#F1EFEC', // Primary color
     },
     secondary: {
-      main: '#424242', // Secondary color
+      main: '#D4C9BE', // Secondary color
     },
     accent: {
       main: '#82B1FF', // Accent color
@@ -58,7 +58,7 @@ export const darkTheme = createTheme({
       main: '#FFC107', // Warning color
     },
     background: {
-      default: 'rgb(12, 11, 11)', // Background color
+      default: '#030303', // Background color
     },
   },
   typography: {

@@ -52,7 +52,7 @@ const ProductCard = ({ product }) => {
         <Typography gutterBottom variant="h6" component="div" noWrap>
           {product.name}
         </Typography>
-        <Typography variant="h6" color="primary" gutterBottom>
+        <Typography variant="h6" color="black | white" gutterBottom>
           ${product.price.toFixed(2)}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

@@ -12,25 +12,28 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import StorefrontIcon from '@mui/icons-material/Storefront';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 
 const features = [
   {
-    icon: 'tune',
-    title: 'Adaptable Performance',
+    icon: <ShoppingCartIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Convenience',
     description:
-      'Our product effortlessly adjusts to your needs, boosting efficiency.',
+      'Shop anytime, anywhere with just a few clicks.',
   },
   {
-    icon: 'shield',
-    title: 'Built to Last',
+    icon: <StorefrontIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Wide Selection',
     description:
-      'Experience unmatched durability that goes above and beyond with lasting investment.',
+      'Access a vast range of products from multiple sellers.',
   },
   {
-    icon: 'thumb_up',
-    title: 'Great User Experience',
+    icon: <AttachMoneyIcon color="primary" sx={{ fontSize: 40 }} />,
+    title: 'Competitive Pricing',
     description:
-      'Integrate our product into your routine with an intuitive and easy-to-use interface.',
+      'Compare prices and get the best deals online.',
   },
 ];
 
@@ -147,7 +150,7 @@ const LandingPage = () => {
             variant="contained"
             color="primary"
             size="large"
-            onClick={() => navigate('/signup')}
+            onClick={() => navigate('/register')}
             component={motion.button}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
