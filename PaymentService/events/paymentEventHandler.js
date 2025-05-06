@@ -1,7 +1,7 @@
 const rabbitmqService = require('../services/rabbitmqService');
 const paymentService = require('../services/paymentService');
-const eventTypes = require('../../shared/eventTypes');
-const rabbitmq = require('../../shared/rabbitmq');
+const eventTypes = require('../shared/eventTypes');
+const rabbitmq = require('../shared/rabbitmq');
 
 
 class PaymentEventHandler {

@@ -1,5 +1,5 @@
-const rabbitmq = require('../../shared/rabbitmq');
-const eventTypes = require('../../shared/eventTypes');
+const rabbitmq = require('../shared/rabbitmq');
+const eventTypes = require('../shared/eventTypes');
 const winston = require('winston');
 const Seller = require('../models/Seller');
 

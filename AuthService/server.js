@@ -7,7 +7,7 @@ const passport = require('./services/passport');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/user');
 const path = require('path');
-const redisClient = require('../shared/redis');
+const redisClient = require('./shared/redis');
 
 const app = express();
 
@@ -15,7 +15,7 @@ const app = express();
 app.use(express.json());
 const cors = require('cors');
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:3001'],
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

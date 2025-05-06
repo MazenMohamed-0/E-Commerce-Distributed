@@ -1,6 +1,6 @@
 const Cart = require('../models/Cart');
 const cartEventHandler = require('../events/cartEventHandler');
-const rabbitmq = require('../../shared/rabbitmq');
+const rabbitmq = require('../shared/rabbitmq');
 const winston = require('winston');
 const jwt = require('jsonwebtoken');
 

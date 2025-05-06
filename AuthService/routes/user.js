@@ -132,8 +132,41 @@ router.put('/admin/update-status/:id', verifyToken, isAdmin, async (req, res) =>
     if (error.message === 'User not found') {
       return res.status(404).json({ message: error.message });
     }
-    if (error.message === 'Invalid status') {
+    if (error.message === 'Invalid status value') {
       return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Reject a seller (admin only)
+router.put('/admin/reject-seller/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const seller = await userService.rejectSeller(req.params.id, reason);
+    res.json({
+      message: 'Seller rejected successfully',
+      seller
+    });
+  } catch (error) {
+    if (error.message === 'Seller not found') {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Approve a seller (admin only)
+router.put('/admin/approve-seller/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const seller = await userService.approveSeller(req.params.id);
+    res.json({
+      message: 'Seller approved successfully',
+      seller
+    });
+  } catch (error) {
+    if (error.message === 'Seller not found') {
+      return res.status(404).json({ message: error.message });
     }
     res.status(500).json({ message: error.message });
   }

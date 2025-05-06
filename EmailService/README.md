@@ -1,109 +1,100 @@
-# Serverless Email Service for E-Commerce
+# Email Service
 
-This is a serverless email service built using Google Cloud Functions. It handles sending order confirmation emails for your e-commerce platform.
+This service handles email notifications for the e-commerce platform, particularly order confirmation emails.
 
-## Prerequisites
+## Features
 
-Before deploying this service, you'll need:
+- Sends order confirmation emails with detailed order information
+- Displays product images in the email for better visual confirmation
+- Uses Google Cloud Secret Manager for secure credential storage
+- Falls back to environment variables in development mode
+- Can be run locally for development or deployed as a Google Cloud Function
 
-1. A Google Cloud Platform account
-2. Google Cloud SDK installed on your machine
-3. A Gmail account (for sending emails)
-4. 2-step verification enabled on your Gmail account
-5. An App Password for the Gmail account (create one at https://myaccount.google.com/apppasswords)
+## Recent Updates
 
-## Setup and Deployment
+- Added product images to order confirmation emails
+- Updated message formatting for better readability
+- Improved error handling and logging
 
-1. Clone this repository or create a new directory for this service
-2. Copy all files from this directory into your project
-3. Update the `PROJECT_ID` in `deploy.sh` with your Google Cloud project ID
-4. Make the deployment script executable:
-   ```
-   chmod +x deploy.sh
-   ```
-5. Run the deployment script:
-   ```
-   ./deploy.sh
-   ```
-6. Follow the prompts to enter your Gmail address and app password
+## Environment Variables
 
-The script will:
-- Enable the Secret Manager API if not already enabled
-- Create secrets for your email credentials
-- Deploy the function to Google Cloud
-- Display the function's URL
+For local development, create a `.env` file with the following:
 
-## Integrating with the Order Service
+```
+# Required
+NODE_ENV=development
+PROJECT_ID=precise-valor-457221-a5
 
-To integrate this email service with your Order Service, modify your `orderService.js` to call the deployed function when an order is created or updated.
-
-1. Add the function URL to your `.env` file:
-   ```
-   EMAIL_SERVICE_URL=https://your-function-url
-   ```
-
-2. Update your Order Service to call the email service:
-
-```javascript
-// In OrderService/services/orderService.js, add:
-const axios = require('axios');
-
-// Inside the createOrder function, after saving the order:
-async function sendOrderConfirmationEmail(order, userEmail) {
-  try {
-    // Get user email from the order or fetch from user service
-    const email = userEmail || await getUserEmail(order.userId);
-    
-    // Call the email service
-    await axios.post(process.env.EMAIL_SERVICE_URL, {
-      order,
-      userEmail: email
-    });
-    
-    console.log('Order confirmation email sent successfully');
-  } catch (error) {
-    // Don't fail the order if email fails
-    console.error('Failed to send order confirmation email:', error.message);
-  }
-}
+# Optional (only needed if not using GCP Secret Manager)
+EMAIL_ADDRESS=your_gmail_address
+EMAIL_PASSWORD=your_gmail_app_password
 ```
 
-3. Call this function after an order is created or updated:
+## Running Locally
 
-```javascript
-// In the createOrder method:
-const order = new Order({...});
-await order.save();
+### Direct Execution
 
-// Send confirmation email
-await sendOrderConfirmationEmail(order);
+```bash
+npm install
+npm run dev
+```
+
+The service will be available at http://localhost:8081
+
+### Docker
+
+```bash
+docker build -t email-service .
+docker run -p 8081:8081 -e NODE_ENV=development -e PROJECT_ID=precise-valor-457221-a5 email-service
+```
+
+## Deployment to Google Cloud Functions
+
+```bash
+gcloud functions deploy sendOrderConfirmation --runtime nodejs20 --trigger-http --allow-unauthenticated
 ```
 
 ## Testing
 
-To test the function locally:
+You can test the email service by sending a POST request to `/sendOrderConfirmation` with a payload like:
 
-1. Install dependencies:
-   ```
-   npm install
-   ```
-
-2. Set the local environment:
-   ```
-   export NODE_ENV=development
-   ```
-
-3. Run the function locally:
-   ```
-   npm run dev
-   ```
-
-4. Send a test request using curl or Postman:
-   ```
-   curl -X POST http://localhost:8080 \
-     -H "Content-Type: application/json" \
-     -d '{"order":{"_id":"test123","totalAmount":99.99,"items":[{"productName":"Test Product","quantity":1,"price":99.99}],"shippingAddress":{"fullName":"Test User","addressLine1":"123 Test St","city":"Test City","state":"TS","postalCode":"12345","country":"Test Country","phoneNumber":"555-123-4567"}},"userEmail":"your-email@example.com"}'
-   ```
+```json
+{
+  "order": {
+    "_id": "123456789",
+    "createdAt": "2023-06-01T12:00:00.000Z",
+    "totalAmount": 125.99,
+    "paymentMethod": "credit card",
+    "paymentStatus": "Paid",
+    "shippingAddress": {
+      "fullName": "John Doe",
+      "addressLine1": "123 Main St",
+      "city": "Anytown",
+      "state": "CA",
+      "postalCode": "12345",
+      "country": "USA",
+      "phoneNumber": "555-123-4567"
+    },
+    "items": [
+      { 
+        "productId": "prod1", 
+        "productName": "Product 1", 
+        "quantity": 2, 
+        "price": 25.99,
+        "imageUrl": "https://example.com/product1.jpg"
+      },
+      { 
+        "productId": "prod2", 
+        "productName": "Product 2", 
+        "quantity": 1, 
+        "price": 74.01,
+        "imageUrl": "https://example.com/product2.jpg"
+      }
+    ]
+  },
+  "userEmail": "test@example.com"
+}
+```
 
 ## Notes on Security
 

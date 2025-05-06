@@ -2,12 +2,17 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cartRoutes = require('./routes/cartRoutes');
 const path = require('path');
-const rabbitmq = require('../shared/rabbitmq');
+const rabbitmq = require('./shared/rabbitmq');
 require('dotenv').config();
 
 const app = express();
 const cors = require('cors');
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Default MongoDB URI if not set in .env

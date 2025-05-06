@@ -2,7 +2,7 @@ const orderRepository = require('../repositories/orderRepository');
 const Order = require('../models/Order');
 const orderEventHandler = require('../events/orderEventHandler');
 const winston = require('winston');
-const rabbitmq = require('../../shared/rabbitmq');
+const rabbitmq = require('../shared/rabbitmq');
 const axios = require('axios');
 const emailService = require('./emailService');
 require('dotenv').config();

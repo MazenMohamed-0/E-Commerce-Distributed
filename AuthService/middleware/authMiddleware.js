@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const redisClient = require('../../shared/redis');
+const redisClient = require('../shared/redis');
 const winston = require('winston');
 
 // Configure logger

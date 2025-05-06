@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Seller = require('../models/Seller');
 const Buyer = require('../models/Buyer');
-const redisClient = require('../../shared/redis');
+const redisClient = require('../shared/redis');
 const winston = require('winston');
 
 // Configure logger
@@ -97,6 +97,23 @@ class AuthService {
           contactNumber: userData.storeInfo.contactNumber || '',
           status: 'pending'
         });
+      } else if (userData.role === 'admin') {
+        console.log('Creating admin user');
+        const Admin = require('../models/Admin');
+        user = new Admin({
+          name: userData.name,
+          email: userData.email,
+          password: userData.password,
+          role: userData.role,
+          status: 'approved',
+          permissions: {
+            canManageUsers: true,
+            canManageSellers: true,
+            canManageProducts: true,
+            canManageOrders: true,
+            superAdmin: userData.superAdmin || false
+          }
+        });
       } else {
         console.log('Creating buyer user');
         user = new Buyer({
@@ -137,6 +154,11 @@ class AuthService {
             message: 'Your seller account is pending approval. Please wait for admin verification.'
           };
         }
+      }
+      
+      // Add admin-specific fields if the user is an admin
+      if (user.role === 'admin') {
+        userResponse.permissions = user.permissions;
       }
 
       // Generate token for non-seller users or approved sellers

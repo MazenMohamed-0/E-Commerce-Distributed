@@ -2,11 +2,16 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# First copy only package.json files to leverage Docker cache
+COPY AuthService/package*.json ./
+COPY shared /app/shared
 
+# Install dependencies
 RUN npm install
+RUN cd /app/shared && npm install
 
-COPY . .
+# Copy service code
+COPY AuthService /app
 
 EXPOSE 3001
 

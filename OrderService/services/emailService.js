@@ -43,18 +43,18 @@ class EmailService {
         try {
             if (EMAIL_CONFIG.USE_TEST_ACCOUNT) {
                 // Create a test account on ethereal.email (fake SMTP service)
-                const testAccount = await nodemailer.createTestAccount();
-                
-                this.transporter = nodemailer.createTransport({
-                    host: 'smtp.ethereal.email',
-                    port: 587,
+            const testAccount = await nodemailer.createTestAccount();
+            
+            this.transporter = nodemailer.createTransport({
+                host: 'smtp.ethereal.email',
+                port: 587,
                     secure: false,
-                    auth: {
-                        user: testAccount.user,
-                        pass: testAccount.pass,
-                    },
-                });
-                
+                auth: {
+                    user: testAccount.user,
+                    pass: testAccount.pass,
+                },
+            });
+            
                 logger.info('Email test account created:', { user: testAccount.user });
                 logger.info('View test emails at: https://ethereal.email/login');
             } else {
@@ -192,8 +192,8 @@ class EmailService {
         // Sanitize and prepare order data
         const safeOrder = this.sanitizeOrderForEmail(order);
         console.log(`[EMAIL SERVICE] Order data sanitized for email, found ${safeOrder.items?.length || 0} items`);
-        
-        // Format the order items for the email
+
+            // Format the order items for the email
         const itemsList = safeOrder.items.map(item => {
             const productIdentifier = item.productName || item.productId || 'Unknown Product';
             const price = parseFloat(item.price) || 0;
@@ -206,12 +206,12 @@ class EmailService {
         const formattedAddress = this.formatShippingAddress(safeOrder.shippingAddress);
         console.log(`[EMAIL SERVICE] Address formatted: ${formattedAddress.substring(0, 50)}...`);
 
-        // Create the email content
-        const mailOptions = {
+            // Create the email content
+            const mailOptions = {
             from: `"E-Commerce Store" <${EMAIL_CONFIG.EMAIL_ADDRESS}>`,
-            to: userEmail,
+                to: userEmail,
             subject: `Order Confirmation #${safeOrder._id}`,
-            text: `
+                text: `
 Thank you for your order!
 
 Order Details:

@@ -1,8 +1,8 @@
 const Product = require('../models/Product');
 const productEventHandler = require('../events/productEventHandler');
 const winston = require('winston');
-const rabbitmq = require('../../shared/rabbitmq');
-const redisClient = require('../../shared/redis');
+const rabbitmq = require('../shared/rabbitmq');
+const redisClient = require('../shared/redis');
 
 const logger = winston.createLogger({
   level: 'info',

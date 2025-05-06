@@ -1,9 +1,9 @@
-const rabbitmq = require('../../shared/rabbitmq');
-const eventTypes = require('../../shared/eventTypes');
+const rabbitmq = require('../shared/rabbitmq');
+const eventTypes = require('../shared/eventTypes');
 const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const jwt = require('jsonwebtoken');
-const redisClient = require('../../shared/redis');
+const redisClient = require('../shared/redis');
 
 // Configure event logger
 const winston = require('winston');

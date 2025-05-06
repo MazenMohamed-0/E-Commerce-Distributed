@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "functions-framework --target=sendOrderConfirmation --port=8081",
-    "dev": "cross-env NODE_ENV=development functions-framework --target=sendOrderConfirmation --port=8081",
+    "dev": "cross-env NODE_ENV=development node dev-server.js",
+    "deploy": "gcloud functions deploy sendOrderConfirmation --runtime nodejs20 --trigger-http --allow-unauthenticated",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "engines": {

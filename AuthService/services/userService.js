@@ -1,5 +1,5 @@
 const userRepository = require('../repositories/userRepository');
-const redisClient = require('../../shared/redis');
+const redisClient = require('../shared/redis');
 const winston = require('winston');
 
 // Configure logger
@@ -447,11 +447,11 @@ class UserService {
   // Reject seller
   async rejectSeller(sellerId, reason) {
     try {
-    const seller = await userRepository.findById(sellerId);
-    if (!seller || seller.role !== 'seller') {
-      throw new Error('Seller not found');
-    }
-    
+      const seller = await userRepository.findById(sellerId);
+      if (!seller || seller.role !== 'seller') {
+        throw new Error('Seller not found');
+      }
+      
       seller.status = 'rejected';
       if (reason) {
         seller.rejectionReason = reason;
@@ -540,7 +540,8 @@ class UserService {
   // Update user status (admin only)
   async updateUserStatus(userId, status) {
     try {
-      if (!['active', 'suspended', 'deactivated'].includes(status)) {
+      // Update to include all valid status values used in the application
+      if (!['active', 'approved', 'pending', 'suspended', 'rejected', 'deactivated'].includes(status)) {
         throw new Error('Invalid status value');
       }
 

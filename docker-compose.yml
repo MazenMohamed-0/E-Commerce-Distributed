@@ -3,16 +3,20 @@ version: '3.8'
 services:
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: rabbitmq
+    hostname: rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=admin
+      - "5673:5672"
+      - "15673:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     networks:
       - ecommerce-network
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
@@ -24,64 +28,136 @@ services:
       - ecommerce-network
 
   auth-service:
-    build: ./AuthService
+    build:
+      context: .
+      dockerfile: ./AuthService/Dockerfile
     ports:
       - "3001:3001"
     environment:
-      - MONGODB_URL=mongodb://mongodb-auth:27017/auth
-      - JWT_SECRET=your_jwt_secret_key
+      - MONGO_URI=mongodb://mongodb-auth:27017/auth
+      - JWT_SECRET=QCYGy11FibaStIjTbZsY3rjb8yoKv2AH
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
+      - ADMIN_SECRET_KEY=123
     depends_on:
-      - mongodb-auth
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_healthy
+      mongodb-auth:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - ./AuthService:/app
+      - /app/node_modules
     networks:
       - ecommerce-network
 
   product-service:
-    build: ./ProductService
+    build:
+      context: .
+      dockerfile: ./ProductService/Dockerfile
     ports:
       - "3002:3002"
     environment:
-      - MONGODB_URL=mongodb://mongodb-product:27017/product
+      - CONNECTION_STRING=mongodb://mongodb-product:27017/product
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
+      - INCLUDE_IMAGE_URLS=true
     depends_on:
-      - mongodb-product
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_healthy
+      mongodb-product:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - ./ProductService:/app
+      - /app/node_modules
     networks:
       - ecommerce-network
 
   cart-service:
-    build: ./CartService
+    build:
+      context: .
+      dockerfile: ./CartService/Dockerfile
     ports:
       - "3003:3003"
     environment:
-      - MONGODB_URL=mongodb://mongodb-cart:27017/cart
+      - CONNECTION_STRING=mongodb://mongodb-cart:27017/cart
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - mongodb-cart
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_healthy
+      mongodb-cart:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - ./CartService:/app
+      - /app/node_modules
     networks:
       - ecommerce-network
 
   order-service:
-    build: ./OrderService
+    build:
+      context: .
+      dockerfile: ./OrderService/Dockerfile
     ports:
       - "3004:3004"
     environment:
-      - MONGODB_URL=mongodb://mongodb-order:27017/order
+      - CONNECTION_STRING=mongodb://mongodb-order:27017/order
       - RABBITMQ_URL=amqp://rabbitmq:5672
-      - REDIS_URL=redis://redis:6379
-      - EMAIL_SERVICE_URL=https://us-central1-precise-valor-457221-a5.cloudfunctions.net/sendOrderConfirmation
+      - EMAIL_SERVICE_URL=http://email-service:8081/sendOrderConfirmation
     depends_on:
-      - mongodb-order
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_healthy
+      mongodb-order:
+        condition: service_started
+      email-service:
+        condition: service_started
+    volumes:
+      - ./OrderService:/app
+      - /app/node_modules
+    networks:
+      - ecommerce-network
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: ./PaymentService/Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - CONNECTION_STRING=mongodb://mongodb-payment:27017/payment
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb-payment:
+        condition: service_started
+    volumes:
+      - ./PaymentService:/app
+      - /app/node_modules
+    networks:
+      - ecommerce-network
+
+  email-service:
+    build:
+      context: .
+      dockerfile: ./EmailService/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - NODE_ENV=development
+      - PROJECT_ID=precise-valor-457221-a5
+      - EMAIL_ADDRESS=${EMAIL_ADDRESS}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    volumes:
+      - ./EmailService:/app
+      - /app/node_modules
     networks:
       - ecommerce-network
 
@@ -91,6 +167,8 @@ services:
       - "27017:27017"
     volumes:
       - mongodb-auth-data:/data/db
+    networks:
+      - ecommerce-network
 
   mongodb-product:
     image: mongo:latest
@@ -98,6 +176,8 @@ services:
       - "27018:27017"
     volumes:
       - mongodb-product-data:/data/db
+    networks:
+      - ecommerce-network
 
   mongodb-cart:
     image: mongo:latest
@@ -105,6 +185,8 @@ services:
       - "27019:27017"
     volumes:
       - mongodb-cart-data:/data/db
+    networks:
+      - ecommerce-network
 
   mongodb-order:
     image: mongo:latest
@@ -112,21 +194,15 @@ services:
       - "27020:27017"
     volumes:
       - mongodb-order-data:/data/db
+    networks:
+      - ecommerce-network
 
-  frontend:
-    build: ./Frontend
+  mongodb-payment:
+    image: mongo:latest
     ports:
-      - "3000:3000"
-    environment:
-      - REACT_APP_AUTH_SERVICE_URL=http://localhost:3001
-      - REACT_APP_PRODUCT_SERVICE_URL=http://localhost:3002
-      - REACT_APP_CART_SERVICE_URL=http://localhost:3003
-      - REACT_APP_ORDER_SERVICE_URL=http://localhost:3004
-    depends_on:
-      - auth-service
-      - product-service
-      - cart-service
-      - order-service
+      - "27021:27017"
+    volumes:
+      - mongodb-payment-data:/data/db
     networks:
       - ecommerce-network
 
@@ -139,5 +215,6 @@ volumes:
   mongodb-product-data:
   mongodb-cart-data:
   mongodb-order-data:
+  mongodb-payment-data:
   rabbitmq-data:
   redis-data:

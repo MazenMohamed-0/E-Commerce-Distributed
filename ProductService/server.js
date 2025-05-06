@@ -2,12 +2,17 @@ const express = require('express');
 const mongoose = require('mongoose');
 const productRoutes = require('./routes/productRoutes');
 const path = require('path');
-const redisClient = require('../shared/redis');
+const redisClient = require('./shared/redis');
 require('dotenv').config();
 
 const app = express();
 const cors = require('cors');
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 const MONGODB_URI = process.env.CONNECTION_STRING ;

@@ -1,6 +1,6 @@
 const Order = require('../models/Order');
 const orderEventHandler = require('../events/orderEventHandler');
-const rabbitmq = require('../../shared/rabbitmq');
+const rabbitmq = require('../shared/rabbitmq');
 const winston = require('winston');
 const { v4: uuidv4 } = require('uuid');
 

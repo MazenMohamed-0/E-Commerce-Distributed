@@ -5,7 +5,7 @@ const sagaOrchestrator = require('../services/sagaOrchestratorService');
 const { verifyToken, isAuthorized, isAdmin, isBuyer, isSeller } = require('../middleware/authMiddleware');
 const { v4: uuidv4 } = require('uuid');
 const Order = require('../models/Order');
-const eventTypes = require('../../shared/eventTypes');
+const eventTypes = require('../shared/eventTypes');
 const orderEventHandler = require('../events/orderEventHandler');
 const axios = require('axios');
 
@@ -419,7 +419,7 @@ router.post('/test-email', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[TEST EMAIL] Error:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
-  }
+    }
 });
 
 module.exports = router;

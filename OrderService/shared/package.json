@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "amqplib": "^0.10.7",
+    "redis": "^5.0.0",
+    "winston": "^3.17.0"
+  },
+  "name": "shared",
+  "version": "1.0.0",
+  "main": "eventTypes.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

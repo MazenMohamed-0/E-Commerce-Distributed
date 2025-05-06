@@ -1,4 +1,4 @@
-const rabbitmq = require('../../shared/rabbitmq');
+const rabbitmq = require('../shared/rabbitmq');
 
 class RabbitMQService {
   async connect() {
